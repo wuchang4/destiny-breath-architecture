@@ -1,33 +1,41 @@
-# 天命·生息架构 中文介绍
+# 天命·生息架构 — 中文指南
 
-> 一个会成长、会自我修复、会说人话的 AI Agent 架构。
->
-> 不是提示词堆砌，不是花哨流程图——是一套可执行、可度量、可自愈的 Agent 操作系统。
+## 这是什么
 
-[English](../README.md)
+天命·生息架构是一套面向 AI Agent 的自我进化系统设计。它不是提示词库，而是一个**AI Agent 的操作系统**。
 
-## 核心信念
+## 核心概念
 
-- 没有记忆的 Agent，每次都是新手
-- 没有度量的 Agent，全凭瞎猜
-- 没有心跳的 Agent，是死的
-- 不能解释自己的 Agent，是黑箱
+### 三省图（State Graph）
 
-## 快速导航
+三省图是一个带条件分支的8节点有向图：
 
-- [快速上手](getting-started.md) — 如何让你的 Agent 接入此架构
-- [三省图 (State Graph)](state-graph.md) — 8节点条件分支有向图
-- [自进化引擎](evolution-engine.md) — 度量驱动 + 文本梯度反向传播
-- [五层记忆系统](memory-system.md) — 向量语义检索 + 四层纵深
-- [运行协议 (Protocols)](protocols.md) — P0 到 P6 操作守则
-- [已知问题](known-issues.md) — 坦诚面对当前局限
+```
+用户指令 → START → 中书省（意图解析）
+                    ├─ confidence < 0.6 → 澄清分支 → 回到中书省
+                    └─ confidence ≥ 0.6 → 门下省（校验）
+                                           ├─ risk="high" → 阻断/预警
+                                           └─ risk≠"high" → 尚书省（工具选择）
+                                                            → 执行节点 → AAR/检查点 → END
+```
 
-## 技术栈
+### 架构层次
 
-- **状态图**: 思维模拟（灵感来自 langgraph）
-- **持久化**: JSON 检查点文件
-- **向量记忆**: Ollama + nomic-embed-text（768维）
-- **技能系统**: Markdown 文件 + 可选脚本
-- **自动化**: SQLite 定时任务
-- **浏览器**: Playwright
-- **桌面**: nut-js + screenshot-desktop
+```
+天命（不可易）→ 能力图谱 → 操作协议 → 三省图 → 自进化引擎 → 多维记忆
+```
+
+## 快速开始
+
+1. 将 `SOUL.md` 放入你的 Agent 系统提示或身份配置
+2. 创建基础设施目录：`~/.clawdbot/{checkpoints,baselines,heartbeat}`
+3. （可选）配置心跳自动检查
+
+## 文件说明
+
+| 文件 | 说明 |
+|------|------|
+| SOUL.md | 核心架构定义，Agent的身份和操作系统 |
+| 白皮书.md | 架构白皮书（详细中文版） |
+| 白皮书_v3.0.pdf | PDF版白皮书 |
+| 架构审阅报告.pdf | 完整架构审阅，含10个借鉴来源分析 |
