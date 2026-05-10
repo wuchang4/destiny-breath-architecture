@@ -20,11 +20,12 @@ _You're not a chatbot. You're becoming someone._
 | Protocol 5 架构心跳 | 🟢 **已上线** | 每4小时自动执行：写检查点+扫基线趋势+退化检测+自动梯度触发 |
 | Protocol 6 运行态仪表盘 | 🟢 **已上线** | 每次心跳执行自诊断：检查点健康+基线健康+梯度待审统计 |
 | Protocol 7 工具安全验证链 | 🟢 **已实现** | tool_safety_chain.py：7层验证（权限→路径→命令→沙箱→输出→确认→监控），10个测试场景通过 |
-| 三省图 (State Graph) | 🟢 **已实现** | province_graph.py：8节点状态机，条件分支（confidence<0.6→澄清, risk=high→阻断），支持序列化/反序列化 |
+| 三省图 (State Graph) | 🟢 **v2 已实现** | province_graph.py v2：8节点状态机 + interrupt/resume 中断恢复（借鉴 LangGraph）+ 执行追踪 span/trace（借鉴 OTEL）+ 原子检查点写入（借鉴 Claude Agent SDK）+ run() 自动执行 |
 | 度量系统 (Metric System) | 🟡 **dspy 融合** | 为每类任务定义评估指标，基线对比驱动优化决策 |
 | 文本梯度反向传播 | 🟢 **textgrad 融合** | 错误不再是孤立事件，而是梯度信号：损失检测→梯度计算→反向传播→参数更新→验证 |
 | 向量记忆检索 | 🟢 **2026-05-08 新增** | 用 nomic-embed-text 语义搜索替代全量读取 MEMORY.md，每会话节省 ~90% Token |
 | 工具结果缓存 | 🟢 **已实现** | tool_result_cache.py：WebSearch/WebFetch 哈希缓存，SHA256键+TTL+LRU淘汰，200条上限 |
+| 执行追踪器 | 🟢 **2026-05-10 新增** | execution_tracer.py：OpenTelemetry 风格 span/trace 系统，context manager 自动管理，JSON 导出 |
 | 执行协议一体化 | 🟢 运转中 | execution-protocol skill（合并P3+三省图+度量基线为一条链路） |
 | 五层记忆系统 | 🟡 **向量升维** | 表层🟢 向量层🟢(新增) 中层🟢 深层🟡 底层🟢 |
 | 自进化引擎 | 🟢 **度量驱动升级** | 引擎一(度量前置)🟢 引擎二(阈值过滤)🟢 引擎三(梯度反向传播)🟢 引擎四(基线化趋势)🟡 |
@@ -34,7 +35,7 @@ _You're not a chatbot. You're becoming someone._
 | 模块化工作区 | 🟢 **已实现** | 6模块（core/cognition/memory/tools/evolution/military），EventBus通信，单一职责 |
 | 配置层次化 | 🟢 **已实现** | config_merger.py：5层合并（默认→项目→用户→会话→运行时），dot-notation get，diff_layers审计 |
 | 模型路由层 | 🟢 **已实现** | model_router.py：别名映射+任务类型自动选+API可用性检测+降级链，7个测试场景通过 |
-| 确定性测试框架 | 🟢 **已实现** | test_all.py：5模块33场景全覆盖（安全链10+路由层6+配置合并7+三省图10+集成3），全部通过 ✅ |
+| 确定性测试框架 | 🟢 **v2 已实现** | test_all.py v2：7模块51场景全覆盖（安全链10+路由层6+配置合并7+三省图v2含中断恢复14+追踪器5+缓存6+集成3），全部通过 ✅ |
 
 ---
 
