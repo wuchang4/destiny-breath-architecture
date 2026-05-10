@@ -19,22 +19,22 @@ _You're not a chatbot. You're becoming someone._
 | Protocol 4 早朝朝会 | 🟢 运转中 | 每次会话开始时执行；新增：同时读取检查点文件+向量记忆检索 |
 | Protocol 5 架构心跳 | 🟢 **已上线** | 每4小时自动执行：写检查点+扫基线趋势+退化检测+自动梯度触发 |
 | Protocol 6 运行态仪表盘 | 🟢 **已上线** | 每次心跳执行自诊断：检查点健康+基线健康+梯度待审统计 |
-| Protocol 7 工具安全验证链 | 🟢 **Claw Code 融合** | 借鉴 Claw Code 的 9 子模块 Bash 验证，升级为 7 层工具执行安全链 |
-| 三省图 (State Graph) | 🟢 **langgraph 融合升级** | 从线性三省升级为带条件分支的 State Graph；8个节点；支持 durable execution + human-in-the-loop；代码层面已实现 ProvinceGraph 类（38行） |
+| Protocol 7 工具安全验证链 | 🟢 **已实现** | tool_safety_chain.py：7层验证（权限→路径→命令→沙箱→输出→确认→监控），10个测试场景通过 |
+| 三省图 (State Graph) | 🟢 **已实现** | province_graph.py：8节点状态机，条件分支（confidence<0.6→澄清, risk=high→阻断），支持序列化/反序列化 |
 | 度量系统 (Metric System) | 🟡 **dspy 融合** | 为每类任务定义评估指标，基线对比驱动优化决策 |
 | 文本梯度反向传播 | 🟢 **textgrad 融合** | 错误不再是孤立事件，而是梯度信号：损失检测→梯度计算→反向传播→参数更新→验证 |
 | 向量记忆检索 | 🟢 **2026-05-08 新增** | 用 nomic-embed-text 语义搜索替代全量读取 MEMORY.md，每会话节省 ~90% Token |
-| 工具结果缓存 | 🟡 **2026-05-08 新增 · 计划中** | WebSearch/WebFetch 结果哈希缓存，避免重复查询消耗 |
+| 工具结果缓存 | 🟢 **已实现** | tool_result_cache.py：WebSearch/WebFetch 哈希缓存，SHA256键+TTL+LRU淘汰，200条上限 |
 | 执行协议一体化 | 🟢 运转中 | execution-protocol skill（合并P3+三省图+度量基线为一条链路） |
 | 五层记忆系统 | 🟡 **向量升维** | 表层🟢 向量层🟢(新增) 中层🟢 深层🟡 底层🟢 |
 | 自进化引擎 | 🟢 **度量驱动升级** | 引擎一(度量前置)🟢 引擎二(阈值过滤)🟢 引擎三(梯度反向传播)🟢 引擎四(基线化趋势)🟡 |
 | 技能系统(7入口) | 🟢 重构v3 | 130技能，7个可管理hub，精简不增反减 |
 | 天行军子系统 | 🟢 **全链路贯通** | 三省图→EventBus→斥候真搜→结果入库→AAR闭环；DDGS搜索后端；跨9领域拆解 |
 | EventBus 事件总线 | 🟢 **SQLite持久化** | 参考 n8n + Netflix Conductor 设计，支持任务重放 |
-| 模块化工作区 | 🟢 **Claw Code 融合** | 借鉴 Crate 职责分离，天命按功能域划分为 6 个独立模块，单一职责 |
-| 配置层次化 | 🟢 **Claw Code 融合** | 借鉴多层配置合并机制：全局→项目→本地→运行时，优先级从低到高 |
-| 模型路由层 | 🟢 **Claw Code 融合** | 统一 Provider 抽象，支持别名映射、自动降级、多模型切换 |
-| 确定性测试框架 | 🟡 **Claw Code 融合 · 计划中** | 借鉴 Mock Parity Harness，为三省图节点和工具链提供确定性测试 |
+| 模块化工作区 | 🟢 **已实现** | 6模块（core/cognition/memory/tools/evolution/military），EventBus通信，单一职责 |
+| 配置层次化 | 🟢 **已实现** | config_merger.py：5层合并（默认→项目→用户→会话→运行时），dot-notation get，diff_layers审计 |
+| 模型路由层 | 🟢 **已实现** | model_router.py：别名映射+任务类型自动选+API可用性检测+降级链，7个测试场景通过 |
+| 确定性测试框架 | 🟢 **已实现** | test_all.py：5模块33场景全覆盖（安全链10+路由层6+配置合并7+三省图10+集成3），全部通过 ✅ |
 
 ---
 
@@ -866,11 +866,11 @@ CLI参数（L5）:     --permission-mode=read-only
 | 4 | **记忆蒸馏需cron自动触发** | 🟡 中 | 脚本就绪，定时器待配置 |
 | 5 | **引擎四基线数据不足**（n<5，趋势不可算） | 🟡 中 | 持续积累中 |
 | 6 | **深层记忆文件REVIEW.md停更** | 🟡 中 | 低频场景，暂无紧急需求 |
-| 7 | **工具结果缓存未实现** | 🟡 中 | 计划中 |
+| 7 | **工具结果缓存** | 🟢 已实现 | tool_result_cache.py：WebSearch/WebFetch 哈希缓存，避免重复查询 |
 | 8 | **微信操控受限**（Qt框架不暴露UIA + 缺多模态视觉） | 🟡 中 | 等待模型升级 |
-| 9 | **确定性测试框架未实现**：Mock Parity Harness 和测试场景均在规划中 | 🟡 中 | Claw Code 融合后新增 |
-| 10 | **配置层次化仅有设计**：project-config.json 和合并逻辑尚未实现 | 🟡 中 | Claw Code 融合后新增 |
-| 11 | **模型路由层仅有设计**：ModelRouter 类和自动降级逻辑尚未实现 | 🟡 中 | Claw Code 融合后新增 |
+| 9 | ~~**确定性测试框架未实现**~~ | ✅ 已解决 | test_all.py：5模块33场景全部通过 |
+| 10 | ~~**配置层次化仅有设计**~~ | ✅ 已解决 | config_merger.py + project-config.json |
+| 11 | ~~**模型路由层仅有设计**~~ | ✅ 已解决 | model_router.py：别名+自动选型+降级链 |
 
 ---
 

@@ -109,8 +109,10 @@ class ModelRouter:
         """
         检查模型 API 是否可达。
         
-        对于本地模型（gemma4:e4b），检查 Ollama 服务。
-        对于远程模型，尝试 HEAD 请求到 API endpoint。
+        检测策略（按优先级）：
+        1. 对于本地模型（gemma4:e4b），检查 Ollama 服务
+        2. 对于支持 /v1/models 端点的远程API，查询模型列表验证
+        3. 降级到简单 HTTP HEAD 检查
         
         Args:
             model_id: 模型ID
@@ -134,15 +136,37 @@ class ModelRouter:
             except (urllib.error.URLError, OSError):
                 return False
 
-        # 远程模型 → 简单连通性检查
+        # 远程模型 → 尝试 /v1/models 端点
         try:
-            # 提取 base URL（去掉 /v1/chat/completions 等路径）
+            base_url = url.split("/v1")[0] if "/v1" in url else url
+            models_url = f"{base_url}/v1/models"
+            api_key = model_info.get("apiKey", "")
+            req = urllib.request.Request(models_url, method="GET")
+            if api_key:
+                req.add_header("Authorization", f"Bearer {api_key}")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                # 检查返回的模型列表中是否包含目标模型
+                available_ids = [
+                    m.get("id", "") for m in data.get("data", [])
+                ]
+                if available_ids and model_id in available_ids:
+                    return True
+                # 模型列表存在但不包含目标 → 不可用
+                if available_ids:
+                    return False
+                # 返回了空列表但 API 可达 → 假定可用
+                return True
+        except (urllib.error.URLError, OSError, json.JSONDecodeError):
+            pass
+
+        # 最后降级：简单 HEAD 检查
+        try:
             base_url = url.split("/v1")[0] if "/v1" in url else url
             req = urllib.request.Request(base_url, method="HEAD")
             with urllib.request.urlopen(req, timeout=timeout):
                 return True
         except (urllib.error.URLError, OSError):
-            # 某些 API 不支持 HEAD，假定可用（真正的检查在实际调用时）
             return True
 
     def select_with_fallback(
