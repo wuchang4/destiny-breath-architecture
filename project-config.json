@@ -1,0 +1,41 @@
+{
+  "model_aliases": {
+    "fast": "gemma4:e4b",
+    "smart": "deepseek-v4-flash",
+    "multimodal": "mimo-v2.5",
+    "coding": "mimo-v2.5-pro",
+    "local": "gemma4:e4b"
+  },
+  "default_model": "smart",
+  "default_permission_mode": "workspace-write",
+  "language": "zh-CN",
+  "memory": {
+    "vector_search_threshold": 0.25,
+    "max_context_tokens": 8192,
+    "vector_search_enabled": true,
+    "distillation_age_days": 30
+  },
+  "heartbeat": {
+    "interval_hours": 4,
+    "enabled": true
+  },
+  "tool_safety": {
+    "enabled": true,
+    "max_output_chars": 20000,
+    "default_timeout_seconds": 120,
+    "max_timeout_seconds": 600,
+    "dangerous_commands": {
+      "block": ["rm -rf", "del /S", "shutil.rmtree", "regedit", "bcdedit", "format"],
+      "warn": ["curl", "wget", "sudo", "runas", "takeown"]
+    },
+    "sensitive_directories": [
+      "Desktop", "Downloads", "Documents", "Home",
+      "AppData", "System32", "/System", "/usr/bin"
+    ]
+  },
+  "evolution": {
+    "gradient_auto_threshold": 3,
+    "baseline_min_samples": 5,
+    "metric_auto_retry": false
+  }
+}
