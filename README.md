@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/stars/wuchang4/destiny-breath-architecture?style=flat-square" />
   <img src="https://img.shields.io/github/license/wuchang4/destiny-breath-architecture?style=flat-square" />
-  <img src="https://img.shields.io/badge/status-v3.0-brightgreen?style=flat-square" />
+  <img src="https://img.shields.io/badge/status-v3.1-brightgreen?style=flat-square" />
 </p>
 
 ---
@@ -15,9 +15,12 @@
 **Destiny-Breath Architecture** is a self-evolving AI agent framework designed for **long-running, memory-persistent, metric-driven agents**. It is not a prompt library — it is an **operating system for AI agents** with:
 
 - **State Graph (三省图)**: 8-node conditional directed graph for structured reasoning
-- **6 Operating Protocols**: Command transparency, AAR, routing logs, state sensing, session warmup, heartbeat, runtime dashboard
+- **7 Operating Protocols**: Command transparency, AAR, routing logs, state sensing, session warmup, heartbeat, runtime dashboard, **tool safety chain**
 - **4-Engine Evolution**: Metric-driven optimization + text-gradient backpropagation
 - **5-Layer Memory System**: Surface → Vector → Mid → Deep → Core
+- **Modular Workspace**: 6 independent modules with single responsibility (Claw Code fusion)
+- **Model Routing Layer**: Alias mapping, task-type auto-selection, auto-fallback (Claw Code fusion)
+- **Configuration Hierarchy**: 5-layer config merging with priority override (Claw Code fusion)
 - **130 Skills across 7 Domain Hubs**: Search, browser, content, Douyin, media, security, agent-core
 - **天行军 Subsystem**: Concrete implementation with DDGS search backend, EventBus, source tracing
 
@@ -34,22 +37,34 @@ This architecture solves that by embedding **self-evolution, persistent memory, 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│               Core Layer: Truths + Logic Anchors             │  ← Immutable
-├─────────────────────────────────────────────────────────────┤
-│               Capability Map: Cognition + Tools + Memory      │  ← Actual capabilities
-├─────────────────────────────────────────────────────────────┤
-│               Operating Protocols (P0-P6)                     │  ← Runtime rules
-├─────────────────────────────────────────────────────────────┤
-│               State Graph (三省图, 8 nodes)                   │  ← Execution engine
-├─────────────────────────────────────────────────────────────┤
-│               Evolution Engine (Metrics + Gradients)          │  ← Learning
-├─────────────────────────────────────────────────────────────┤
-│               Multi-Layer Memory System (5 layers)            │  ← Persistence
-├─────────────────────────────────────────────────────────────┤
-│               天行军 Subsystem (12 components)                │  ← Concrete practice
-└─────────────────────────────────────────────────────────────┘
-Runtime: WorkBuddy + DeepSeek V4 Flash
+┌─────────────────────────────────────────────────────────────────┐
+│               Core Layer: Truths + Logic Anchors                 │  ← Immutable
+├─────────────────────────────────────────────────────────────────┤
+│               Operating Protocols (P0-P7)                        │  ← Runtime rules
+│               (P7: Tool Safety Chain — 7-layer validation)       │
+├─────────────────────────────────────────────────────────────────┤
+│               Modular Workspace (6 modules)                      │  ← Claw Code fusion
+│               ┌───────┬──────────┬───────┐                      │
+│               │ core  │cognition │memory │                      │
+│               └───┬───┴────┬─────┴───┬───┘                      │
+│                   └────────┼─────────┘                           │
+│                    EventBus (SQLite)                             │
+│                   ┌────────┼─────────┐                           │
+│               ┌───┴───┬────┴────┬────┴───┐                      │
+│               │ tools │evolution│military│                      │
+│               └───────┴─────────┴────────┘                      │
+├─────────────────────────────────────────────────────────────────┤
+│               State Graph (三省图, 8 nodes)                      │  ← Execution engine
+├─────────────────────────────────────────────────────────────────┤
+│               Evolution Engine (4 engines)                       │  ← Learning
+│               Model Routing Layer (aliases + fallback)           │  ← Claw Code fusion
+│               Config Hierarchy (5-layer merging)                 │  ← Claw Code fusion
+├─────────────────────────────────────────────────────────────────┤
+│               Multi-Layer Memory System (5 layers)              │  ← Persistence
+├─────────────────────────────────────────────────────────────────┤
+│               天行军 Subsystem (12 components)                   │  ← Concrete practice
+└─────────────────────────────────────────────────────────────────┘
+Runtime: WorkBuddy + DeepSeek V4 Flash / MiMo V2.5 / Gemma 4
 ```
 
 ## Status Dashboard
@@ -59,14 +74,18 @@ Runtime: WorkBuddy + DeepSeek V4 Flash
 | Core Truths | 🟢 Stable | Foundation of every response |
 | Logic Anchors | 🟢 Stable | 11 logic anchors for structured reasoning |
 | State Graph (三省图) | 🟢 Stable | 8-node conditional directed graph (ProvinceGraph, 38 lines) |
-| Heartbeat (P5) | 🟢 Online | Auto self-check every 4 hours |
-| Dashboard (P6) | 🟢 Online | Runtime diagnostics per heartbeat |
+| Protocols (P0-P6) | 🟢 Online | Command transparency, AAR, routing, state sensing, warmup, heartbeat, dashboard |
+| Protocol 7 (Tool Safety) | 🟢 **New** | 7-layer tool execution safety validation chain |
+| Modular Workspace | 🟢 **New** | 6 independent modules with single responsibility |
+| Model Routing Layer | 🟢 **New** | Alias mapping + task-type auto-selection + auto-fallback |
+| Config Hierarchy | 🟢 **New** | 5-layer config merging (global → project → user → session → runtime) |
 | Metric System | 🟡 Evolving | Evaluation metrics per task type |
 | Text-Grad Evolution | 🟢 Online | Error → gradient → backpropagation → rule update |
 | Vector Memory | 🟢 Online | Semantic search via nomic-embed-text, ~90% token savings |
 | Skill System | 🟢 v3 | 130 skills across 7 domain hubs |
 | 天行军 Subsystem | 🟢 Full loop | State Graph → EventBus → DDGS → AAR closed loop |
 | EventBus | 🟢 Online | SQLite-persisted event-driven architecture |
+| Deterministic Test Framework | 🟡 Planned | Mock Parity Harness for State Graph nodes |
 
 ## Files
 
@@ -76,6 +95,8 @@ Runtime: WorkBuddy + DeepSeek V4 Flash
 | [白皮书.md](./%E7%99%BD%E7%9A%AE%E4%B9%A6.md) | Architecture white paper (Chinese) |
 | [白皮书_v3.0.pdf](./%E7%99%BD%E7%9A%AE%E4%B9%A6_v3.0.pdf) | White paper in PDF format |
 | [架构审阅报告.pdf](./%E6%9E%B6%E6%9E%84%E5%AE%A1%E9%98%85%E6%8A%A5%E5%91%8A.pdf) | Full architecture review report with source attribution table |
+| [docs/claw-code-analysis.md](./docs/claw-code-analysis.md) | Claw Code source code analysis report |
+| [docs/claw-code-upgrade-report.md](./docs/claw-code-upgrade-report.md) | Upgrade plan based on Claw Code design patterns |
 
 ## Quick Start
 
@@ -107,6 +128,7 @@ This architecture is not built from scratch. Key inspirations:
 | **langgraph** (LangChain) | State Graph, checkpoint persistence, Human-in-the-loop | 🔵 Deep |
 | **dspy** (Stanford) | Metric system, baseline comparison, optimization loop | 🔵 Deep |
 | **textgrad** | Text-gradient backpropagation, computation graph tracing | 🔵 Deep |
+| **Claw Code** (ultraworkers) | Modular workspace (Crate separation), deterministic test framework (Mock Parity Harness), tool safety chain (9-module Bash validation), config hierarchy (5-layer merging), model routing layer (Provider abstraction + aliases) | 🔵 Deep |
 | **Matt Pocock** | Caveman Mode, Grill Before You Build | 🟡 Medium |
 | **ByteDance DeerFlow 2.0** | Vector memory retrieval, sub-agent pooling | 🟡 Medium |
 | **n8n** | Event bus, workflow orchestration | 🟡 Medium |
@@ -122,7 +144,11 @@ This architecture is not built from scratch. Key inspirations:
 - Memory distillation is partially manual
 - No tool result caching yet
 - WeChat control limited by Qt UIA + missing multimodal vision
+- **[NEW]** Deterministic test framework not yet implemented
+- **[NEW]** Configuration hierarchy has design but no runtime code
+- **[NEW]** Model routing layer has design but no runtime code
 
 ---
 
-*Built by 天命人 · Powered by DeepSeek V4 Flash · v3.0 (2026-05-09)*
+*Built by 天命人 · Powered by DeepSeek V4 Flash · v3.1 (2026-05-10)*
+*Claw Code fusion: modular workspace + tool safety chain + model routing + config hierarchy + test framework*

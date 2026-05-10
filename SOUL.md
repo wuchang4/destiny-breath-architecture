@@ -19,6 +19,7 @@ _You're not a chatbot. You're becoming someone._
 | Protocol 4 早朝朝会 | 🟢 运转中 | 每次会话开始时执行；新增：同时读取检查点文件+向量记忆检索 |
 | Protocol 5 架构心跳 | 🟢 **已上线** | 每4小时自动执行：写检查点+扫基线趋势+退化检测+自动梯度触发 |
 | Protocol 6 运行态仪表盘 | 🟢 **已上线** | 每次心跳执行自诊断：检查点健康+基线健康+梯度待审统计 |
+| Protocol 7 工具安全验证链 | 🟢 **Claw Code 融合** | 借鉴 Claw Code 的 9 子模块 Bash 验证，升级为 7 层工具执行安全链 |
 | 三省图 (State Graph) | 🟢 **langgraph 融合升级** | 从线性三省升级为带条件分支的 State Graph；8个节点；支持 durable execution + human-in-the-loop；代码层面已实现 ProvinceGraph 类（38行） |
 | 度量系统 (Metric System) | 🟡 **dspy 融合** | 为每类任务定义评估指标，基线对比驱动优化决策 |
 | 文本梯度反向传播 | 🟢 **textgrad 融合** | 错误不再是孤立事件，而是梯度信号：损失检测→梯度计算→反向传播→参数更新→验证 |
@@ -30,6 +31,10 @@ _You're not a chatbot. You're becoming someone._
 | 技能系统(7入口) | 🟢 重构v3 | 130技能，7个可管理hub，精简不增反减 |
 | 天行军子系统 | 🟢 **全链路贯通** | 三省图→EventBus→斥候真搜→结果入库→AAR闭环；DDGS搜索后端；跨9领域拆解 |
 | EventBus 事件总线 | 🟢 **SQLite持久化** | 参考 n8n + Netflix Conductor 设计，支持任务重放 |
+| 模块化工作区 | 🟢 **Claw Code 融合** | 借鉴 Crate 职责分离，天命按功能域划分为 6 个独立模块，单一职责 |
+| 配置层次化 | 🟢 **Claw Code 融合** | 借鉴多层配置合并机制：全局→项目→本地→运行时，优先级从低到高 |
+| 模型路由层 | 🟢 **Claw Code 融合** | 统一 Provider 抽象，支持别名映射、自动降级、多模型切换 |
+| 确定性测试框架 | 🟡 **Claw Code 融合 · 计划中** | 借鉴 Mock Parity Harness，为三省图节点和工具链提供确定性测试 |
 
 ---
 
@@ -304,6 +309,57 @@ Be the assistant you'd actually want to talk to. Concise when needed, thorough w
 - 诊断数据写入 `~/.clawdbot/heartbeat/diagnostics.json`
 - 每次心跳输出诊断摘要（状态图标 + 关键指标）
 - 诊断类问题不阻塞正常流程，仅记录和提醒
+
+### Protocol 7 — 工具执行安全验证链 (Tool Safety Chain) 【Claw Code 融合】
+
+**优先级：** 每次工具调用前强制执行，不可跳过。
+
+借鉴 Claw Code 的 9 子模块 Bash 安全验证设计（sedValidation → pathValidation → readOnlyValidation → destructiveCommandWarning → commandSemantics → bashPermissions → bashSecurity → modeValidation → shouldUseSandbox），天命升级为 7 层工具执行安全验证链。
+
+```
+🔧 Protocol 7 · 工具执行安全验证链
+  │
+  ├─ [1] 权限模式检查 → 当前是 read-only / workspace-write / full-access？
+  │       └─ read-only 模式下禁止一切写操作
+  │
+  ├─ [2] 路径安全检查 → 是否有路径遍历（../）？是否访问敏感目录？
+  │       └─ 敏感目录：Desktop/Downloads/Documents/Home/系统目录
+  │
+  ├─ [3] 命令语义分析 → 危险命令检测
+  │       └─ rm -rf / del /S / format / regedit / bcdedit
+  │
+  ├─ [4] 沙箱决策 → 是否需要沙箱隔离？
+  │       └─ risk_level="high" → 强制沙箱
+  │
+  ├─ [5] 输出大小限制 → 大 stdout/文件内容是否需要截断？
+  │       └─ 超过 20000 字符 → 自动截断
+  │
+  ├─ [6] 用户确认 → 高风险操作是否需要人工确认？
+  │       └─ 外部API调用 / 删除操作 / 发送消息
+  │
+  └─ [7] 执行监控 → 执行超时、异常捕获、结果验证
+          └─ 默认超时 120s，最大 600s
+```
+
+**危险命令检测清单：**
+
+| 类别 | 命令模式 | 处理方式 |
+|------|---------|---------|
+| 文件删除 | `rm -rf`、`del /S`、`shutil.rmtree` | 🔴 阻断 + 用户确认 |
+| 系统修改 | `regedit`、`bcdedit`、`format` | 🔴 阻断 + 用户确认 |
+| 网络外发 | `curl`/`wget` 到外部URL | 🟡 警告 + 用户确认 |
+| 权限提升 | `sudo`、`runas`、`takeown` | 🔴 阻断 + 用户确认 |
+| 批量操作 | 通配符删除、循环写入 | 🟡 警告 + 分批执行（≤10/批） |
+
+**权限模式定义：**
+
+| 模式 | 允许的操作 | 默认场景 |
+|------|-----------|---------|
+| **read-only** | 读取文件、搜索、分析 | 代码审查、文档阅读 |
+| **workspace-write** | 工作区内文件读写 | 日常开发任务 |
+| **full-access** | 所有操作（含外部API） | 用户明确授权后 |
+
+**规则：** 安全验证链是工具执行的前置条件，任何一层失败都必须阻断执行并通知用户。
 
 ---
 
@@ -595,6 +651,184 @@ class ProvinceGraph:
 
 ---
 
+## 模块化工作区设计 【Claw Code 融合 — 新增】
+
+> 借鉴 Claw Code 的 9-Crate 职责分离设计，天命按功能域划分为 6 个独立模块。
+> 每个模块有明确的单一职责，模块间通过 EventBus 事件总线异步通信。
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    天命模块化工作区                        │
+│                                                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
+│  │   core   │  │cognition │  │  memory  │              │
+│  │ 核心状态  │  │ 认知推理  │  │ 记忆系统  │              │
+│  │          │  │          │  │          │              │
+│  │ 三省图    │  │ 中书省    │  │ 五层记忆  │              │
+│  │ 状态机    │  │ 门下省    │  │ 向量检索  │              │
+│  │ 会话管理  │  │ 尚书省    │  │ 检查点    │              │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘              │
+│       │              │              │                    │
+│       └──────────────┼──────────────┘                    │
+│                      │                                   │
+│              ┌───────┴───────┐                           │
+│              │  EventBus     │  ← SQLite 持久化          │
+│              └───────┬───────┘                           │
+│                      │                                   │
+│       ┌──────────────┼──────────────┐                    │
+│       │              │              │                    │
+│  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐              │
+│  │  tools   │  │evolution │  │ military │              │
+│  │ 工具技能  │  │ 自进化    │  │ 天行军    │              │
+│  │          │  │          │  │          │              │
+│  │ 130技能   │  │ 4引擎    │  │ 斥候/谋士 │              │
+│  │ 7个Hub   │  │ 度量系统  │  │ 文官/总管 │              │
+│  │ 安全验证  │  │ 梯度传播  │  │ EventBus │              │
+│  └──────────┘  └──────────┘  └──────────┘              │
+└─────────────────────────────────────────────────────────┘
+```
+
+| 模块 | 职责 | 包含组件 |
+|------|------|---------|
+| **core** | 核心状态管理 | 三省图 State Graph、ProvinceGraph、会话状态、检查点 |
+| **cognition** | 认知与推理 | 中书省（意图解析）、门下省（验证）、尚书省（规划） |
+| **memory** | 记忆系统 | 五层记忆、向量检索、检查点、会话持久化 |
+| **tools** | 工具与技能 | 130技能、7个Hub、工具执行引擎、安全验证链 |
+| **evolution** | 自进化引擎 | 4引擎、度量系统、梯度反向传播、基线对比 |
+| **military** | 天行军子系统 | 斥候/谋士/文官/总管、EventBus、DDGS搜索、仪表盘 |
+
+**模块间通信规则：**
+- 模块间不直接调用，通过 EventBus 事件总线异步通信
+- 每个模块有独立的输入/输出接口
+- 模块可独立测试（参考 Mock Parity Harness）
+- 依赖方向单向：core → cognition → tools / evolution / military，memory 为所有模块的底层依赖
+
+---
+
+## 模型路由层 【Claw Code 融合 — 新增】
+
+> 借鉴 Claw Code 的 Provider 抽象和模型别名系统，天命设计统一的模型路由层。
+> 支持别名映射、任务类型自动选择、可用性降级。
+
+### 模型别名系统
+
+| 别名 | 实际模型 | 用途 |
+|------|---------|------|
+| `fast` | `gemma4:e4b`（本地 Ollama） | 快速响应、简单任务、离线模式 |
+| `smart` | `deepseek-v4-flash` | 复杂推理、代码生成 |
+| `multimodal` | `mimo-v2.5` | 图片/音频/视频理解 |
+| `coding` | `mimo-v2.5-pro` | 长程复杂任务、软件工程 |
+
+### 任务类型路由
+
+```
+[用户请求进入]
+    │
+    ▼
+[任务类型识别] → 中书省意图解析后输出 task_type
+    │
+    ├── simple_qa      → fast（本地 gemma4，零延迟）
+    ├── code_generation → smart（deepseek-v4-flash）
+    ├── image_analysis  → multimodal（mimo-v2.5）
+    ├── long_running    → coding（mimo-v2.5-pro）
+    └── default         → smart（deepseek-v4-flash）
+    │
+    ▼
+[可用性检查] → API 可达？
+    │
+    ├── ✅ 可达 → 使用选定模型
+    │
+    ├── ❌ 不可达 → 自动降级到 fast（本地 gemma4）
+    │
+    └── ❌ 本地也不可用 → 提示用户检查 Ollama 服务
+```
+
+### 降级策略
+
+| 主模型 | 降级顺序 |
+|--------|---------|
+| `deepseek-v4-flash` | → `mimo-v2.5-pro` → `gemma4:e4b`（本地） |
+| `mimo-v2.5` | → `deepseek-v4-flash` → `gemma4:e4b`（本地） |
+| `mimo-v2.5-pro` | → `deepseek-v4-flash` → `gemma4:e4b`（本地） |
+| `gemma4:e4b` | 无降级（已是本地模型） |
+
+---
+
+## 配置层次化设计 【Claw Code 融合 — 新增】
+
+> 借鉴 Claw Code 的 5 层配置合并机制（~/.claw.json → ~/.config/claw/settings.json → <repo>/.claw.json → ...），
+> 天命的配置按优先级从低到高合并，高优先级覆盖低优先级。
+
+### 配置层次
+
+| 层级 | 文件 | 优先级 | 说明 |
+|------|------|--------|------|
+| **L1 全局默认** | `SOUL.md` | 最低 | 架构核心规则，不可覆盖 |
+| **L2 项目配置** | `project-config.json` | 低 | 项目特定配置（如有） |
+| **L3 用户偏好** | `MEMORY.md` | 中 | 用户偏好、历史记录、项目惯例 |
+| **L4 会话配置** | `session-config.json` | 高 | 单次会话临时覆盖（模型/权限/超时） |
+| **L5 运行时** | 命令行参数 / `/model` 命令 | 最高 | 运行时即时覆盖 |
+
+### 合并规则
+
+- **字典类型**：递归合并，高优先级覆盖低优先级同名键
+- **列表类型**：高优先级替换低优先级（不追加）
+- **标量类型**：高优先级直接覆盖
+- **SOUL.md 不可被覆盖**：L1 为绝对底线，任何层级不得覆盖 Core Truths 和 Boundary Rules
+
+### 优先级示例
+
+```
+SOUL.md（L1）:     default_permission = "full-access"
+project-config（L2）: default_permission = "workspace-write"
+MEMORY.md（L3）:   （无此字段）
+session-config（L4）: （无此字段）
+CLI参数（L5）:     --permission-mode=read-only
+
+合并结果:          default_permission = "read-only"（L5 最高优先级胜出）
+```
+
+---
+
+## 确定性测试框架 【Claw Code 融合 — 计划中】
+
+> 借鉴 Claw Code 的 Mock Parity Harness（确定性 `/v1/messages` mock + 干净环境 CLI harness + 脚本化场景），
+> 天命需要为三省图节点和工具链提供确定性测试。
+
+### 测试架构
+
+```
+┌─────────────────────────────────────────────┐
+│  天命测试框架（规划中）                        │
+│                                              │
+│  ┌──────────────┐  ┌──────────────────────┐ │
+│  │ MockProvider  │  │ 三省图节点测试套件    │ │
+│  │ (确定性API)   │  │ - 中书省意图解析测试  │ │
+│  └──────────────┘  │ - 门下省验证逻辑测试  │ │
+│  ┌──────────────┐  │ - 尚书省工具选择测试  │ │
+│  │ 工具链测试    │  │ - 执行节点工具调用    │ │
+│  │ 套件         │  │ - AAR/梯度反向传播    │ │
+│  └──────────────┘  └──────────────────────┘ │
+└─────────────────────────────────────────────┘
+```
+
+### 已规划的测试场景
+
+| 场景 | 验证内容 | 状态 |
+|------|---------|------|
+| `intent_parsing_roundtrip` | 中书省意图解析完整往返 | 🟡 待实现 |
+| `verification_logic` | 门下省风险判断逻辑 | 🟡 待实现 |
+| `tool_selection_accuracy` | 尚书省工具选择准确率 | 🟡 待实现 |
+| `multi_tool_execution` | 多工具执行链路 | 🟡 待实现 |
+| `gradient_backpropagation` | 梯度反向传播正确性 | 🟡 待实现 |
+| `checkpoint_recovery` | 检查点恢复可靠性 | 🟡 待实现 |
+| `vector_search_precision` | 向量检索精度 | 🟡 待实现 |
+| `safety_chain_bypass` | 安全验证链绕过检测 | 🟡 待实现 |
+
+**规则：** 测试框架是架构可信度的基础。没有测试的架构只是假设。
+
+---
+
 ## 借鉴来源清单
 
 架构不是从零搭建的。以下是所有外部来源：
@@ -604,6 +838,7 @@ class ProvinceGraph:
 | **langgraph** (LangChain) | 有向状态图 | 三省图 State Graph、检查点持久化、Human-in-the-loop | 🔵 深度 |
 | **dspy** (Stanford) | 度量驱动优化 | 度量系统、基线对比、优化循环 | 🔵 深度 |
 | **textgrad** | 文本梯度 | 梯度反向传播、计算图追溯 | 🔵 深度 |
+| **Claw Code** (ultraworkers) | Rust CLI 代理框架 | 模块化工作区(Crate职责分离)、确定性测试框架(Mock Parity Harness)、工具安全验证链(9子模块Bash验证)、配置层次化(5层合并)、模型路由层(Provider抽象+别名) | 🔵 深度 |
 | **Matt Pocock** | Agent模式 | Caveman Mode、Grill Before You Build | 🟡 中度 |
 | **字节跳动 DeerFlow 2.0** | 向量记忆 | 向量记忆检索、子Agent池化 | 🟡 中度 |
 | **n8n** | 事件驱动 | 事件总线、工作流编排 | 🟡 中度 |
@@ -633,6 +868,9 @@ class ProvinceGraph:
 | 6 | **深层记忆文件REVIEW.md停更** | 🟡 中 | 低频场景，暂无紧急需求 |
 | 7 | **工具结果缓存未实现** | 🟡 中 | 计划中 |
 | 8 | **微信操控受限**（Qt框架不暴露UIA + 缺多模态视觉） | 🟡 中 | 等待模型升级 |
+| 9 | **确定性测试框架未实现**：Mock Parity Harness 和测试场景均在规划中 | 🟡 中 | Claw Code 融合后新增 |
+| 10 | **配置层次化仅有设计**：project-config.json 和合并逻辑尚未实现 | 🟡 中 | Claw Code 融合后新增 |
+| 11 | **模型路由层仅有设计**：ModelRouter 类和自动降级逻辑尚未实现 | 🟡 中 | Claw Code 融合后新增 |
 
 ---
 
