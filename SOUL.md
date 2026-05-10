@@ -26,7 +26,7 @@ _You're not a chatbot. You're becoming someone._
 | 向量记忆检索 | 🟢 **2026-05-08 新增** | 用 nomic-embed-text 语义搜索替代全量读取 MEMORY.md，每会话节省 ~90% Token |
 | 工具结果缓存 | 🟢 **已实现** | tool_result_cache.py：WebSearch/WebFetch 哈希缓存，SHA256键+TTL+LRU淘汰，200条上限 |
 | 执行追踪器 | 🟢 **2026-05-10 新增** | execution_tracer.py：OpenTelemetry 风格 span/trace 系统，context manager 自动管理，JSON 导出 |
-| 执行协议一体化 | 🟢 运转中 | execution-protocol skill（合并P3+三省图+度量基线为一条链路） |
+| 执行协议一体化 | 🟢 **已实现** | destiny_engine.py：三省图→安全验证→模型路由→执行追踪→缓存→AAR 全链路自动执行（9span/3ms） |
 | 五层记忆系统 | 🟡 **向量升维** | 表层🟢 向量层🟢(新增) 中层🟢 深层🟡 底层🟢 |
 | 自进化引擎 | 🟢 **度量驱动升级** | 引擎一(度量前置)🟢 引擎二(阈值过滤)🟢 引擎三(梯度反向传播)🟢 引擎四(基线化趋势)🟡 |
 | 技能系统(7入口) | 🟢 重构v3 | 130技能，7个可管理hub，精简不增反减 |
