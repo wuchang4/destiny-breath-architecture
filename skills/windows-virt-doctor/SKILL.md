@@ -1,9 +1,30 @@
 ---
 name: windows-virt-doctor
-description: Windows 虚拟化诊断工具。诊断 WSL2/Hyper-V/Docker 创建失败问题：HNS 损坏、ICS 冲突、0x80072726/0x80072f78/RPC 错误、Hyper-V 服务异常。触发词：WSL2、Hyper-V、虚拟化、HNS、虚拟机创建失败、0x80072726、0x80072f78、Docker 启动失败
+description: Windows 虚拟化诊断工具。诊断 WSL2/Hyper-V/Docker 创建失败问题：代理 TUN 拦截（最常见）、HNS 损坏、ICS 冲突、0x80072726/0x80072f78/RPC 错误、Hyper-V 服务异常。触发词：WSL2、Hyper-V、虚拟化、HNS、虚拟机创建失败、0x80072726、0x80072f78、Docker 启动失败
 ---
 
 # Windows 虚拟化诊断 · 框架化排查
+
+## 🚀 快速修复（3步搞定）
+
+> **场景：正在装 WSL2 但报错。不想看全文，直接来这。**
+
+```powershell
+# 第1步：检查并退出代理（90%的根因）
+tasklist | findstr /i "vortex clash v2ray"
+# 如果输出了进程名 → 托盘右键退出代理
+
+# 第2步：重置网络栈
+netsh winsock reset
+
+# 第3步：重试安装
+wsl --install -d Ubuntu-22.04
+# 或双击开始菜单的 Ubuntu 图标
+```
+
+**如果还有问题 → 往下看完整诊断流程。**
+
+---
 
 ## 适用场景
 
@@ -281,22 +302,26 @@ wsl --set-default-version 1
 
 ## 代理兼容性诊断
 
+> ⚠️ 警告：以下方法在代理开启时可能全部失效。**最稳妥的方法是先退出代理再装 WSL。**
+
 如果 `wsl --install -d <Distro>` 下载失败（0x80072f78）：
 
 ```powershell
-# 检查代理配置
-$env:HTTP_PROXY
-$env:HTTPS_PROXY
+# 方法1（最快）：退出代理 → 重置网络 → 重试
+# 1. 托盘退出代理软件
+# 2. netsh winsock reset
+# 3. wsl --install -d Ubuntu-22.04
 
-# 确认 winget 可用
-/c/Users/$env:USERNAME/AppData/Local/Microsoft/WindowsApps/winget.exe search Ubuntu
+# 方法2：退出代理后用 winget（不走wsl的GitHub下载）
+winget install Canonical.Ubuntu.2204 --accept-package-agreements
+# 装完后运行：ubuntu2204.exe 完成首次配置
 
-# 用 winget 替代 wsl 下载
-/c/Users/$env:USERNAME/AppData/Local/Microsoft/WindowsApps/winget.exe install Canonical.Ubuntu.2204
-
-# 然后手动导入
-wsl --import <DistroName> <InstallPath> <install.tar.gz> --version 1
+# 方法3：退出代理后手动导入
+# 浏览器打开 https://aka.ms/wslubuntu2204
+# 下载 .appx 文件 → 双击安装 → ubuntu2204.exe 启动
 ```
+
+**经验：不要试图在 Vortex 开着的时候装 WSL 发行版。** TUN 模式拦截的范围远超 HTTP 流量，`winget`、`wsl --install`、浏览器下载都可能被干扰。三行命令解决的事，别花 30 分钟去排查。
 
 ---
 
