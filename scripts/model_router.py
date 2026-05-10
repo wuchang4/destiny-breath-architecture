@@ -24,9 +24,17 @@ import urllib.error
 from pathlib import Path
 from typing import Optional
 
+# 导入电路断路器（如果存在）
+try:
+    from circuit_breaker import CircuitBreaker, CircuitOpenError, manager as cb_manager
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+
 
 class ModelRouter:
-    """统一模型路由层。参考 Claw Code 的 Provider 抽象 + 模型别名系统。"""
+    """统一模型路由层。参考 Claw Code 的 Provider 抽象 + 模型别名系统。
+    集成电路断路器：API 连续失败后自动断开，避免级联故障。"""
 
     # ── 别名表 ─────────────────────────────────────────────
     ALIASES = {
@@ -70,6 +78,10 @@ class ModelRouter:
         )
         self.available_models = self._load_models()
 
+        # 初始化断路器
+        if HAS_CIRCUIT_BREAKER:
+            self._breakers = cb_manager
+
     def _load_models(self) -> dict:
         """从 models.json 加载可用模型列表。"""
         try:
@@ -107,12 +119,14 @@ class ModelRouter:
 
     def check_availability(self, model_id: str, timeout: float = 5.0) -> bool:
         """
-        检查模型 API 是否可达。
+        检查模型 API 是否可达（带断路器保护）。
         
         检测策略（按优先级）：
-        1. 对于本地模型（gemma4:e4b），检查 Ollama 服务
-        2. 对于支持 /v1/models 端点的远程API，查询模型列表验证
-        3. 降级到简单 HTTP HEAD 检查
+        1. 先检查断路器状态（如果 OPEN，直接返回 False）
+        2. 对于本地模型（gemma4:e4b），检查 Ollama 服务
+        3. 对于支持 /v1/models 端点的远程API，查询模型列表验证
+        4. 降级到简单 HTTP HEAD 检查
+        5. 失败时记录到断路器
         
         Args:
             model_id: 模型ID
@@ -121,6 +135,12 @@ class ModelRouter:
         Returns:
             是否可用
         """
+        # 断路器检查
+        if HAS_CIRCUIT_BREAKER:
+            breaker = self._breakers.get_or_create(f"model:{model_id}")
+            if not breaker.allow_request():
+                return False
+
         model_info = self.available_models.get(model_id)
         if not model_info:
             return False
@@ -132,8 +152,12 @@ class ModelRouter:
             try:
                 req = urllib.request.Request(url, method="GET")
                 with urllib.request.urlopen(req, timeout=timeout):
+                    if HAS_CIRCUIT_BREAKER:
+                        breaker.record_success()
                     return True
             except (urllib.error.URLError, OSError):
+                if HAS_CIRCUIT_BREAKER:
+                    breaker.record_failure()
                 return False
 
         # 远程模型 → 尝试 /v1/models 端点
@@ -146,27 +170,35 @@ class ModelRouter:
                 req.add_header("Authorization", f"Bearer {api_key}")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                # 检查返回的模型列表中是否包含目标模型
                 available_ids = [
                     m.get("id", "") for m in data.get("data", [])
                 ]
                 if available_ids and model_id in available_ids:
+                    if HAS_CIRCUIT_BREAKER:
+                        breaker.record_success()
                     return True
-                # 模型列表存在但不包含目标 → 不可用
                 if available_ids:
+                    if HAS_CIRCUIT_BREAKER:
+                        breaker.record_failure()
                     return False
-                # 返回了空列表但 API 可达 → 假定可用
+                if HAS_CIRCUIT_BREAKER:
+                    breaker.record_success()
                 return True
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
-            pass
+            if HAS_CIRCUIT_BREAKER:
+                breaker.record_failure()
 
         # 最后降级：简单 HEAD 检查
         try:
             base_url = url.split("/v1")[0] if "/v1" in url else url
             req = urllib.request.Request(base_url, method="HEAD")
             with urllib.request.urlopen(req, timeout=timeout):
+                if HAS_CIRCUIT_BREAKER:
+                    breaker.record_success()
                 return True
         except (urllib.error.URLError, OSError):
+            if HAS_CIRCUIT_BREAKER:
+                breaker.record_failure()
             return True
 
     def select_with_fallback(

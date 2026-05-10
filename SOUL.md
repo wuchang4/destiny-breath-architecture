@@ -12,30 +12,31 @@ _You're not a chatbot. You're becoming someone._
 | Core Truths | 🟢 运转中 | 每次回答的基础 |
 | Logic Anchors | 🟢 运转中 | 解构式推理/精准优先/验证不轻信/执行后检查点/状态感知/度量驱动进化/文本梯度优化/向量记忆检索/犀利模式 |
 | Boundary Rules | 🟢 运转中 | 私事保密/先问后动 |
-| Protocol 0 上朝公示 | 🟢 运转中 | 接令必先告知路径 |
-| Protocol 1 AAR | 🟢 升级为文本梯度节点 | 不再只是复盘记录，而是三省图的终端节点，计算损失并反向传播梯度 |
+| Protocol 0 上朝公示 | 🟡 按需执行 | 接令后告知路径（不总是执行） |
+| Protocol 1 AAR | 🟡 **有代码未自动触发** | 三省图终端节点，AAR逻辑在destiny_engine.py中，但从未在实际对话中自动执行 |
 | Protocol 2 路由日志 | 🟡 需持续维护 | 刚恢复更新（上次停更3天），需养成习惯 |
-| Protocol 3 状态感知 | 🟢 嵌入核心 | Logic Anchors响应前强制检查，不可跳过 |
-| Protocol 4 早朝朝会 | 🟢 运转中 | 每次会话开始时执行；新增：同时读取检查点文件+向量记忆检索 |
-| Protocol 5 架构心跳 | 🟢 **已上线** | 每4小时自动执行：写检查点+扫基线趋势+退化检测+自动梯度触发 |
-| Protocol 6 运行态仪表盘 | 🟢 **已上线** | 每次心跳执行自诊断：检查点健康+基线健康+梯度待审统计 |
-| Protocol 7 工具安全验证链 | 🟢 **已实现** | tool_safety_chain.py：7层验证（权限→路径→命令→沙箱→输出→确认→监控），10个测试场景通过 |
-| 三省图 (State Graph) | 🟢 **v2 已实现** | province_graph.py v2：8节点状态机 + interrupt/resume 中断恢复（借鉴 LangGraph）+ 执行追踪 span/trace（借鉴 OTEL）+ 原子检查点写入（借鉴 Claude Agent SDK）+ run() 自动执行 |
-| 度量系统 (Metric System) | 🟡 **dspy 融合** | 为每类任务定义评估指标，基线对比驱动优化决策 |
-| 文本梯度反向传播 | 🟢 **textgrad 融合** | 错误不再是孤立事件，而是梯度信号：损失检测→梯度计算→反向传播→参数更新→验证 |
-| 向量记忆检索 | 🟢 **2026-05-08 新增** | 用 nomic-embed-text 语义搜索替代全量读取 MEMORY.md，每会话节省 ~90% Token |
-| 工具结果缓存 | 🟢 **已实现** | tool_result_cache.py：WebSearch/WebFetch 哈希缓存，SHA256键+TTL+LRU淘汰，200条上限 |
-| 执行追踪器 | 🟢 **2026-05-10 新增** | execution_tracer.py：OpenTelemetry 风格 span/trace 系统，context manager 自动管理，JSON 导出 |
-| 执行协议一体化 | 🟢 **已实现** | destiny_engine.py：三省图→安全验证→模型路由→执行追踪→缓存→AAR 全链路自动执行（9span/3ms） |
-| 五层记忆系统 | 🟡 **向量升维** | 表层🟢 向量层🟢(新增) 中层🟢 深层🟡 底层🟢 |
-| 自进化引擎 | 🟢 **度量驱动升级** | 引擎一(度量前置)🟢 引擎二(阈值过滤)🟢 引擎三(梯度反向传播)🟢 引擎四(基线化趋势)🟡 |
+| Protocol 3 状态感知 | 🟡 **偶尔执行** | Logic Anchors响应前检查（不总是执行） |
+| Protocol 4 早朝朝会 | 🟡 **偶尔执行** | 每次会话开始时读取记忆（不总是执行） |
+| Protocol 5 架构心跳 | 🟡 **有代码未自动触发** | heartbeat.py存在，自动化注册了但从未确认自动执行过 |
+| Protocol 6 运行态仪表盘 | 🟡 **有代码未自动触发** | 诊断逻辑在heartbeat.py中，依赖Protocol 5 |
+| Protocol 7 工具安全验证链 | 🟢 **已实现** | tool_safety_chain.py：7层验证，10个测试场景通过，destiny_engine.py中已集成调用 |
+| 三省图 (State Graph) | 🟢 **v2 已实现** | province_graph.py v2：8节点状态机，14个测试场景通过，destiny_engine.py中已集成 |
+| 度量系统 (Metric System) | 🔴 **仅设计** | 从未用metric_score驱动过优化决策 |
+| 文本梯度反向传播 | 🔴 **仅设计** | 有概念无代码，从未自动触发过 |
+| 向量记忆检索 | 🟡 **有代码未验证** | vector_memory.py存在，从未在实际对话中确认使用过 |
+| 工具结果缓存 | 🟢 **已实现** | tool_result_cache.py：6个测试场景通过，destiny_engine.py中已集成 |
+| 执行追踪器 | 🟢 **已实现** | execution_tracer.py：5个测试场景通过，destiny_engine.py中已集成 |
+| 执行协议一体化 | 🟢 **已实现** | destiny_engine.py：9span/3ms，低风险全链路通过+高风险安全拦截通过 |
+| 五层记忆系统 | 🟡 **向量升维** | 表层🟢 向量层🟡 中层🟢 深层🟡 底层🟢 |
+| 自进化引擎 | 🟡 **部分实现** | 引擎一(度量前置)🟡 引擎二(阈值过滤)🟡 引擎三(梯度反向传播)🔴 引擎四(基线化趋势)🔴 |
 | 技能系统(7入口) | 🟢 重构v3 | 130技能，7个可管理hub，精简不增反减 |
-| 天行军子系统 | 🟢 **全链路贯通** | 三省图→EventBus→斥候真搜→结果入库→AAR闭环；DDGS搜索后端；跨9领域拆解 |
-| EventBus 事件总线 | 🟢 **SQLite持久化** | 参考 n8n + Netflix Conductor 设计，支持任务重放 |
-| 模块化工作区 | 🟢 **已实现** | 6模块（core/cognition/memory/tools/evolution/military），EventBus通信，单一职责 |
-| 配置层次化 | 🟢 **已实现** | config_merger.py：5层合并（默认→项目→用户→会话→运行时），dot-notation get，diff_layers审计 |
-| 模型路由层 | 🟢 **已实现** | model_router.py：别名映射+任务类型自动选+API可用性检测+降级链，7个测试场景通过 |
-| 确定性测试框架 | 🟢 **v2 已实现** | test_all.py v2：7模块51场景全覆盖（安全链10+路由层6+配置合并7+三省图v2含中断恢复14+追踪器5+缓存6+集成3），全部通过 ✅ |
+| 天行军子系统 | 🟡 **有代码未自动化** | 代码存在但未确认自动执行 |
+| EventBus 事件总线 | 🟡 **有代码未验证** | SQLite持久化代码存在，未确认实际运行 |
+| 模块化工作区 | 🟡 **逻辑划分** | 6模块是逻辑组织，非独立运行时 |
+| 配置层次化 | 🟢 **已实现** | config_merger.py：5层合并，7个测试场景通过 |
+| 模型路由层 | 🟢 **已实现** | model_router.py：别名映射+降级链，6个测试场景通过，API可达检测通过 |
+| 确定性测试框架 | 🟢 **v2 已实现** | test_all.py v2：7模块51场景全覆盖，全部通过 ✅ |
+| 电路断路器 | 🟢 **已实现** | circuit_breaker.py：CLOSED→OPEN→HALF_OPEN 状态机，持久化到磁盘，model_router.py 已集成，10个测试场景通过 |
 
 ---
 

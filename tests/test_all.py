@@ -507,6 +507,98 @@ def test_integration():
     print("  🎉 全链路集成测试 3 个场景全部通过！")
 
 
+def test_circuit_breaker():
+    """测试电路断路器（新增）。"""
+    from circuit_breaker import CircuitBreaker, CircuitOpenError, CircuitState
+
+    print("\n=== 测试电路断路器 ===")
+
+    # 场景 1: 初始状态为 CLOSED
+    cb = CircuitBreaker("test-cb", failure_threshold=3, timeout=2)
+    assert cb.state == CircuitState.CLOSED
+    print("  ✅ 场景 1: 初始状态 CLOSED")
+
+    # 场景 2: 成功调用不改变状态
+    with cb:
+        pass
+    assert cb.state == CircuitState.CLOSED
+    assert cb._success_count == 1
+    print("  ✅ 场景 2: 成功调用不改变状态")
+
+    # 场景 3: 连续失败未达阈值不打开
+    for _ in range(2):
+        try:
+            with cb:
+                raise ValueError("模拟失败")
+        except ValueError:
+            pass
+    assert cb.state == CircuitState.CLOSED
+    print("  ✅ 场景 3: 连续失败2次（阈值3）不打开")
+
+    # 场景 4: 连续失败达到阈值后打开
+    try:
+        with cb:
+            raise ValueError("第三次失败")
+    except ValueError:
+        pass
+    assert cb.state == CircuitState.OPEN
+    print("  ✅ 场景 4: 第3次失败后断路器 OPEN")
+
+    # 场景 5: OPEN 状态拒绝请求
+    try:
+        with cb:
+            pass
+        assert False, "应该抛出 CircuitOpenError"
+    except CircuitOpenError as e:
+        assert "OPEN" in str(e)
+        print("  ✅ 场景 5: OPEN 状态拒绝请求 (CircuitOpenError)")
+
+    # 场景 6: 超时后进入 HALF_OPEN
+    import time
+    time.sleep(2.1)
+    assert cb.state == CircuitState.HALF_OPEN
+    print("  ✅ 场景 6: 超时后自动进入 HALF_OPEN")
+
+    # 场景 7: HALF_OPEN 成功后恢复 CLOSED
+    with cb:
+        pass
+    assert cb.state == CircuitState.CLOSED
+    print("  ✅ 场景 7: HALF_OPEN 成功后恢复 CLOSED")
+
+    # 场景 8: HALF_OPEN 失败后重新打开
+    for _ in range(3):
+        try:
+            with cb:
+                raise ValueError("失败")
+        except ValueError:
+            pass
+    assert cb.state == CircuitState.OPEN
+    time.sleep(2.1)
+    assert cb.state == CircuitState.HALF_OPEN
+    try:
+        with cb:
+            raise ValueError("试探失败")
+    except ValueError:
+        pass
+    assert cb.state == CircuitState.OPEN
+    print("  ✅ 场景 8: HALF_OPEN 失败后重新打开")
+
+    # 场景 9: 手动重置
+    cb.reset()
+    assert cb.state == CircuitState.CLOSED
+    assert cb._failure_count == 0
+    print("  ✅ 场景 9: 手动重置")
+
+    # 场景 10: 状态摘要
+    status = cb.status()
+    assert "name" in status
+    assert "state" in status
+    assert "failure_threshold" in status
+    print("  ✅ 场景 10: 状态摘要")
+
+    print("  🎉 电路断路器全部 10 个测试通过！")
+
+
 # ── 主入口 ─────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -522,13 +614,14 @@ if __name__ == "__main__":
         ("三省图 State Graph v2", test_province_graph),
         ("执行追踪器", test_execution_tracer),
         ("工具结果缓存", test_tool_result_cache),
+        ("电路断路器", test_circuit_breaker),
         ("全链路集成", test_integration),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 6, 7, 14, 5, 6, 3]
+    scenario_counts = [10, 6, 7, 14, 5, 6, 10, 3]
 
     for i, (name, test_fn) in enumerate(tests):
         try:
