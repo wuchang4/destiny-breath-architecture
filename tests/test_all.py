@@ -599,6 +599,96 @@ def test_circuit_breaker():
     print("  🎉 电路断路器全部 10 个测试通过！")
 
 
+def test_memory_blocks():
+    """测试 Memory Blocks 记忆系统（新增 v3.2.2）。"""
+    from memory_blocks import MemorySystem, MemoryBlock
+    import tempfile, os, json
+
+    print("\n=== 测试 Memory Blocks 记忆系统 ===")
+
+    # 使用临时目录
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ms = MemorySystem()
+        ms.MEMORY_DIR = tmpdir
+        ms.CORE_FILE = os.path.join(tmpdir, "core_blocks.json")
+        ms.ARCHIVAL_FILE = os.path.join(tmpdir, "archival_store.json")
+        # 重置内部状态（避免源文件加载干扰）
+        ms._core_blocks = {}
+        ms._archival_store = []
+
+        # 场景 1: 添加高重要性记忆到 Core
+        ms.add_memory("human", "用户喜欢简洁回答", 0.8)
+        assert "human" in ms._core_blocks
+        assert ms._core_blocks["human"].importance == 0.8
+        print("  ✅ 场景 1: 添加高重要性记忆到 Core")
+
+        # 场景 2: 低重要性记忆进 Archival
+        ms.add_memory("memories", "今天天气不错", 0.2)
+        assert len(ms._archival_store) == 1
+        print("  ✅ 场景 2: 低重要性记忆自动进 Archival")
+
+        # 场景 3: 追加到已有 Block
+        ms.append_to_block("human", "用户使用中文交流", 0.6)
+        content = ms.get_block("human")
+        assert "中文交流" in content
+        print("  ✅ 场景 3: 追加内容到 Block")
+
+        # 场景 4: 重要性建议
+        high_score = ms.suggest_importance("记住这个重要设置，永远不要修改")
+        low_score = ms.suggest_importance("刚才试了一下")
+        assert high_score > low_score, f"{high_score} should be > {low_score}"
+        print("  ✅ 场景 4: 重要性建议（高频词更高分）")
+
+        # 场景 5: 搜索 Archival
+        from memory_blocks import ArchivalEntry
+        ms._archival_store.append(ArchivalEntry(
+            id="test1", label="memories", content="用户偏好：简洁回答",
+            importance=0.6, archived_at=0, source="test"
+        ))
+        results = ms.search_archival("偏好")
+        assert len(results) >= 1
+        print("  ✅ 场景 5: Archival 搜索")
+
+        # 场景 6: 持久化到磁盘
+        ms._save_core()
+        ms._save_archival()
+        assert os.path.exists(ms.CORE_FILE), f"core file not found at {ms.CORE_FILE}"
+        assert os.path.exists(ms.ARCHIVAL_FILE), f"archival file not found at {ms.ARCHIVAL_FILE}"
+        # 验证 JSON 内容
+        with open(ms.CORE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert "human" in data
+        print("  ✅ 场景 6: 持久化到磁盘")
+
+        # 场景 7: stats 输出
+        stats = ms.stats()
+        assert "core_blocks" in stats
+        assert "archival_count" in stats
+        print("  ✅ 场景 7: stats 输出")
+
+        # 场景 8: summary 输出
+        summary = ms.summary()
+        assert "Memory System" in summary
+        print("  ✅ 场景 8: summary 输出")
+
+        # 场景 9: update_block
+        ms.update_block("persona", "我是天命人", 0.9)
+        assert ms.get_block("persona") == "我是天命人"
+        print("  ✅ 场景 9: update_block")
+
+        # 场景 10: auto_compact（降级低重要性 block）
+        ms._core_blocks["temp"] = MemoryBlock(
+            label="temp", content="临时信息，不重要",
+            importance=0.1, updated_at=0, created_at=0
+        )
+        ms.auto_compact(threshold=0.3)
+        assert "temp" not in ms._core_blocks  # 应该被归档
+        assert len(ms._archival_store) >= 1  # 归档后有内容
+        print("  ✅ 场景 10: auto_compact 降级低重要性内容")
+
+    print("  🎉 Memory Blocks 全部 10 个测试通过！")
+
+
 # ── 主入口 ─────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -615,13 +705,14 @@ if __name__ == "__main__":
         ("执行追踪器", test_execution_tracer),
         ("工具结果缓存", test_tool_result_cache),
         ("电路断路器", test_circuit_breaker),
+        ("Memory Blocks", test_memory_blocks),
         ("全链路集成", test_integration),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 6, 7, 14, 5, 6, 10, 3]
+    scenario_counts = [10, 6, 7, 14, 5, 6, 10, 10, 3]
 
     for i, (name, test_fn) in enumerate(tests):
         try:
