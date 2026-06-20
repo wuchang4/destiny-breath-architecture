@@ -4,6 +4,7 @@ from .adapters import FileReadTool, FileWriteTool, HttpGetTool, ShellCommandTool
 from .agents import AgentAdapter, AgentOutcome, AgentPlan, EnhancedAgent
 from .evals import Benchmark, EvalCase, EvalCaseResult, EvalReport
 from .hooks import EnhancementHook, HookAbort, PolicyHook, RecordingHook
+from .openclaw import OpenClawBridge, OpenClawRequest, OpenClawResponse, openclaw_skill_manifest
 from .providers import (
     FileMemoryProvider,
     HashEmbeddingProvider,
@@ -41,6 +42,10 @@ __all__ = [
     "HookAbort",
     "PolicyHook",
     "RecordingHook",
+    "OpenClawBridge",
+    "OpenClawRequest",
+    "OpenClawResponse",
+    "openclaw_skill_manifest",
     "FileMemoryProvider",
     "HashEmbeddingProvider",
     "KeywordMemoryProvider",

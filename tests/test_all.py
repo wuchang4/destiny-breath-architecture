@@ -1362,6 +1362,104 @@ def test_token_budget_api():
     print("  Token Budget API 6 scenarios passed!")
 
 
+def test_openclaw_bridge_api():
+    """Test OpenClaw-style bridge integration."""
+    from destiny import (
+        FunctionTool,
+        OpenClawBridge,
+        OpenClawRequest,
+        Runtime,
+        RuntimeConfig,
+        openclaw_skill_manifest,
+    )
+
+    print("\n=== Testing OpenClaw Bridge API ===")
+
+    # Scenario 1: request aliases and defaults are normalized.
+    request = OpenClawRequest.from_mapping({
+        "text": "hello bridge",
+        "conversation_id": "conv-1",
+        "user": "operator",
+        "args": {"mode": "brief"},
+    })
+    assert request.message == "hello bridge"
+    assert request.session_id == "conv-1"
+    assert request.sender == "operator"
+    assert request.tool_args["mode"] == "brief"
+    print("  OK scenario 1: OpenClawRequest normalizes common payload aliases")
+
+    # Scenario 2: bridge routes a chat payload through Runtime and a registered tool.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def reply_tool(args, context):
+            record = context["memory"].put(
+                f"session:{args['session_id']}",
+                f"{args['channel']}:{args['message']}",
+                {"sender": args["sender"]},
+            )
+            return {"reply": f"reply to {args['message']}", "memory_key": record.key}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".openclaw")),
+            tools=[
+                FunctionTool(
+                    name="Reply",
+                    required=("message", "channel", "session_id", "sender"),
+                    handler=reply_tool,
+                )
+            ],
+        )
+        bridge = OpenClawBridge(runtime, default_tool="Reply")
+        response = bridge.handle({
+            "message": "ship status",
+            "channel": "openclaw",
+            "session_id": "session-1",
+            "sender": "tester",
+        }, run_id="openclaw-success")
+        assert response.ok is True
+        assert response.message == "reply to ship status"
+        assert response.tool_name == "Reply"
+        assert response.data["memory_key"] == "session:session-1"
+        assert runtime.memory_provider.search("ship status", top_k=1)[0].key == "session:session-1"
+        runtime.close()
+        print("  OK scenario 2: bridge executes registered Runtime tool")
+
+    # Scenario 3: bridge exposes a serializable skill manifest.
+    manifest = openclaw_skill_manifest(name="destiny-openclaw", default_tool="Reply")
+    assert manifest["name"] == "destiny-openclaw"
+    assert manifest["default_tool"] == "Reply"
+    assert "message" in manifest["input_schema"]["required"]
+    assert manifest["output_schema"]["properties"]["ok"]["type"] == "boolean"
+    print("  OK scenario 3: OpenClaw skill manifest is serializable")
+
+    # Scenario 4: unregistered tool failure is returned as an OpenClaw response.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".openclaw-missing")),
+        )
+        bridge = OpenClawBridge(runtime, default_tool="MissingTool")
+        response = bridge.handle({"message": "call missing"}, run_id="openclaw-missing")
+        assert response.ok is False
+        assert "not registered" in response.message
+        assert response.errors
+        runtime.close()
+        print("  OK scenario 4: missing tool becomes structured bridge error")
+
+    # Scenario 5: no-tool bridge can still return a safe passthrough response.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".openclaw-passthrough")),
+        )
+        bridge = OpenClawBridge(runtime)
+        response = bridge.handle({"message": "no tool needed"}, run_id="openclaw-passthrough")
+        assert response.ok is True
+        assert response.message == "no tool needed"
+        assert response.tool_name == ""
+        runtime.close()
+        print("  OK scenario 5: bridge supports no-tool passthrough")
+
+    print("  OpenClaw Bridge API 5 scenarios passed!")
+
+
 def test_circuit_breaker():
     """测试电路断路器（新增）。"""
     from circuit_breaker import CircuitBreaker, CircuitOpenError, CircuitState
@@ -1571,12 +1669,13 @@ if __name__ == "__main__":
         ("Policy Hook", test_policy_hook),
         ("Provider API", test_provider_api),
         ("Token Budget API", test_token_budget_api),
+        ("OpenClaw Bridge API", test_openclaw_bridge_api),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

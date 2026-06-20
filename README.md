@@ -38,10 +38,11 @@ agent without forcing the agent itself to be rewritten.
 | Memory providers | Working | File keyword memory, JSON vector memory, and SQLite vector memory. |
 | Model providers | Working | Provider protocol plus deterministic static provider for tests. |
 | Token budget | Working | Dependency-free token estimates, context compaction, memory retrieval limits, model prompt/response limits, and tool result compaction. |
+| OpenClaw bridge | Working | `OpenClawBridge` routes chat-style payloads through Destiny Runtime controls. |
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 114 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 119 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -165,6 +166,44 @@ report_exists=True
 memory_hit=agent-readiness-report
 1/1 passed (100.0%); tool_success=100.0%; interrupted=0; errors=0
 ```
+
+## OpenClaw Bridge
+
+Destiny can wrap OpenClaw-style chat payloads without replacing the chat gateway
+or agent loop. The bridge maps a message envelope into a guarded Destiny run,
+then returns a response envelope for the original channel.
+
+```bash
+python examples/openclaw_bridge.py
+```
+
+Minimal usage:
+
+```python
+from destiny import FunctionTool, OpenClawBridge, Runtime, RuntimeConfig
+
+
+def draft_reply(args, context):
+    return {"reply": f"Destiny handled: {args['message']}"}
+
+
+runtime = Runtime.from_config(
+    RuntimeConfig(workspace_root=".", state_dir=".destiny"),
+    tools=[FunctionTool(name="DraftReply", required=("message",), handler=draft_reply)],
+)
+
+bridge = OpenClawBridge(runtime, default_tool="DraftReply")
+response = bridge.handle({
+    "message": "Summarize the agent upgrade status.",
+    "channel": "openclaw",
+    "session_id": "demo-session",
+})
+
+print(response.message)
+```
+
+The bridge keeps Destiny as the control layer: tool safety, memory providers,
+token budgets, audit logs, run persistence, and hooks still apply.
 
 ## Standard Tool Adapters
 
@@ -436,6 +475,7 @@ route to interruption and require explicit confirmation/resume.
 | `destiny/agents.py` | Agent enhancement contracts and wrapper. |
 | `destiny/adapters.py` | Built-in file, shell, and HTTP tool adapters. |
 | `destiny/providers.py` | Model, memory, embedding, file/vector/SQLite providers. |
+| `destiny/openclaw.py` | OpenClaw-style request/response bridge and skill manifest helper. |
 | `destiny/token_budget.py` | Token estimates, compaction helpers, and budgeted provider views. |
 | `destiny/tools.py` | Tool adapter contracts and manifest helpers. |
 | `destiny/evals.py` | Benchmark and deterministic evaluation helpers. |
@@ -451,6 +491,7 @@ route to interruption and require explicit confirmation/resume.
 | `scripts/memory_blocks.py` | Core and archival memory block prototype. |
 | `examples/` | Runnable integration examples. |
 | `examples/complete_agent_task.py` | Complete repository-audit agent task. |
+| `examples/openclaw_bridge.py` | OpenClaw-style chat payload bridge demo. |
 | `tests/test_all.py` | Deterministic smoke/integration coverage. |
 | `docs/ci-cd.md` | GitHub Actions CI/CD workflow template and token-scope note. |
 
@@ -466,12 +507,13 @@ The repository now provides:
 - File, JSON vector, and SQLite vector memory backends.
 - Provider interfaces for models, memory, and embeddings.
 - Agent enhancement wrapper.
+- OpenClaw-style bridge for chat payload integration.
 - Policy hooks.
 - Evaluation helpers.
 - Audit logs and run result persistence.
 - Configurable state directory.
 - Token budget controls for context, model calls, memory retrieval, and tool results.
-- Deterministic test suite covering 114 scenarios.
+- Deterministic test suite covering 119 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits
@@ -482,7 +524,7 @@ Important remaining work:
 - Enable GitHub Actions CI once a token with `workflow` scope is available.
 - Add first-class OpenAI/local embedding provider adapters.
 - Add external vector database adapters such as pgvector or Qdrant.
-- Add bridge packages for Open Claw, MCP, LangChain, AutoGen, and Codex-style runtimes.
+- Add bridge packages for MCP, LangChain, AutoGen, Codex-style runtimes, and deeper OpenClaw deployments.
 - Split the monolithic `tests/test_all.py` into focused pytest modules.
 - Add release packaging and formal versioned docs.
 
