@@ -39,11 +39,12 @@ agent without forcing the agent itself to be rewritten.
 | Model providers | Working | Provider protocol plus deterministic static provider for tests. |
 | Token budget | Working | Dependency-free token estimates, context compaction, memory retrieval limits, model prompt/response limits, and tool result compaction. |
 | OpenClaw bridge | Working | `OpenClawBridge` routes chat-style payloads through Destiny Runtime controls. |
+| MCP bridge | Working | `McpToolBridge` exposes Runtime tools through MCP-style JSON-RPC `tools/list` and `tools/call`. |
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | Quality gate | Working | `QualityEvaluator` and `QualityRubric` score outputs and plug into `EvalCase.judge`. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 124 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 129 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -269,6 +270,43 @@ The `function` format is a generic model-tool-calling shape:
   }
 }
 ```
+
+## MCP Bridge
+
+`McpToolBridge` exposes registered Runtime tools through an MCP-style JSON-RPC
+shape for embedders that want `initialize`, `ping`, `tools/list`, and
+`tools/call` without running a full MCP transport server in this package.
+
+```bash
+python examples/mcp_bridge.py
+```
+
+Minimal usage:
+
+```python
+from destiny import FunctionTool, McpToolBridge, Runtime, RuntimeConfig
+
+
+def summarize(args, context):
+    return {"summary": f"Destiny handled: {args['text']}"}
+
+
+runtime = Runtime.from_config(
+    RuntimeConfig(workspace_root=".", state_dir=".destiny"),
+    tools=[FunctionTool(name="Summarize", required=("text",), handler=summarize)],
+)
+
+bridge = McpToolBridge(runtime)
+response = bridge.handle({
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": "Summarize", "arguments": {"text": "agent runtime"}},
+})
+```
+
+The bridge preserves Destiny's runtime guarantees: tool safety, token budgets,
+memory providers, hooks, audit logs, and run persistence still apply.
 
 ## Memory Backends
 
@@ -502,6 +540,7 @@ route to interruption and require explicit confirmation/resume.
 | `destiny/agents.py` | Agent enhancement contracts and wrapper. |
 | `destiny/adapters.py` | Built-in file, shell, and HTTP tool adapters. |
 | `destiny/providers.py` | Model, memory, embedding, file/vector/SQLite providers. |
+| `destiny/mcp.py` | MCP-style JSON-RPC bridge for Runtime tools. |
 | `destiny/openclaw.py` | OpenClaw-style request/response bridge and skill manifest helper. |
 | `destiny/token_budget.py` | Token estimates, compaction helpers, and budgeted provider views. |
 | `destiny/tools.py` | Tool adapter contracts and manifest helpers. |
@@ -519,6 +558,7 @@ route to interruption and require explicit confirmation/resume.
 | `scripts/memory_blocks.py` | Core and archival memory block prototype. |
 | `examples/` | Runnable integration examples. |
 | `examples/complete_agent_task.py` | Complete repository-audit agent task. |
+| `examples/mcp_bridge.py` | MCP-style JSON-RPC tool bridge demo. |
 | `examples/openclaw_bridge.py` | OpenClaw-style chat payload bridge demo. |
 | `examples/quality_gate.py` | Deterministic quality gate demo. |
 | `tests/test_all.py` | Deterministic smoke/integration coverage. |
@@ -537,13 +577,14 @@ The repository now provides:
 - Provider interfaces for models, memory, and embeddings.
 - Agent enhancement wrapper.
 - OpenClaw-style bridge for chat payload integration.
+- MCP-style bridge for tool-listing and tool-calling integration.
 - Policy hooks.
 - Evaluation helpers.
 - Deterministic quality evaluator and Benchmark-compatible quality gates.
 - Audit logs and run result persistence.
 - Configurable state directory.
 - Token budget controls for context, model calls, memory retrieval, and tool results.
-- Deterministic test suite covering 124 scenarios.
+- Deterministic test suite covering 129 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits
@@ -554,7 +595,7 @@ Important remaining work:
 - Enable GitHub Actions CI once a token with `workflow` scope is available.
 - Add first-class OpenAI/local embedding provider adapters.
 - Add external vector database adapters such as pgvector or Qdrant.
-- Add bridge packages for MCP, LangChain, AutoGen, Codex-style runtimes, and deeper OpenClaw deployments.
+- Add bridge packages for LangChain, AutoGen, Codex-style runtimes, full MCP transport, and deeper OpenClaw deployments.
 - Split the monolithic `tests/test_all.py` into focused pytest modules.
 - Add release packaging and formal versioned docs.
 

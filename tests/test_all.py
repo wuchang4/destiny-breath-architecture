@@ -1459,6 +1459,87 @@ def test_quality_evaluator_api():
     print("  Quality Evaluator API 5 scenarios passed!")
 
 
+def test_mcp_bridge_api():
+    """Test MCP-style JSON-RPC tool bridge."""
+    from destiny import FunctionTool, McpToolBridge, Runtime, RuntimeConfig, mcp_tool_manifest
+
+    print("\n=== Testing MCP Bridge API ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def echo(args, context):
+            return {"echo": args["message"], "path": context["node_history"]}
+
+        def fail(args, context):
+            raise ValueError("planned failure")
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".mcp")),
+            tools=[
+                FunctionTool(
+                    name="Echo",
+                    required=("message",),
+                    handler=echo,
+                    description="Echo one MCP message.",
+                ),
+                FunctionTool(name="Fail", handler=fail, description="Fail deterministically."),
+            ],
+        )
+        bridge = McpToolBridge(runtime)
+
+        initialize = bridge.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        assert initialize["result"]["serverInfo"]["name"] == "destiny-runtime"
+        assert initialize["result"]["capabilities"]["tools"]["listChanged"] is False
+        ping = bridge.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})
+        assert ping["result"] == {}
+        print("  OK scenario 1: initialize and ping return MCP-style results")
+
+        listed = bridge.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+        tool_names = {tool["name"] for tool in listed["result"]["tools"]}
+        assert {"Echo", "Fail"} <= tool_names
+        assert "inputSchema" in listed["result"]["tools"][0]
+        helper_manifest = mcp_tool_manifest(runtime)
+        assert helper_manifest["tools"]
+        print("  OK scenario 2: tools/list exposes Runtime tools")
+
+        called = bridge.handle({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "Echo", "arguments": {"message": "hello mcp"}},
+        })
+        result = called["result"]
+        assert result["isError"] is False
+        assert result["structuredContent"]["echo"] == "hello mcp"
+        assert result["content"][0]["type"] == "text"
+        print("  OK scenario 3: tools/call executes a registered tool")
+
+        failed = bridge.handle({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "Fail", "arguments": {}},
+        })
+        assert failed["result"]["isError"] is True
+        assert "planned failure" in failed["result"]["structuredContent"]["error"]
+        print("  OK scenario 4: tool failure returns MCP tool error result")
+
+        unknown_method = bridge.handle({"jsonrpc": "2.0", "id": 6, "method": "unknown/method"})
+        assert unknown_method["error"]["code"] == -32601
+        unknown_tool = bridge.handle({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": "Missing", "arguments": {}},
+        })
+        assert unknown_tool["error"]["code"] == -32602
+        notification = bridge.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        assert notification is None
+        runtime.close()
+        print("  OK scenario 5: bridge handles protocol errors and notifications")
+
+    print("  MCP Bridge API 5 scenarios passed!")
+
+
 def test_openclaw_bridge_api():
     """Test OpenClaw-style bridge integration."""
     from destiny import (
@@ -1767,13 +1848,14 @@ if __name__ == "__main__":
         ("Provider API", test_provider_api),
         ("Token Budget API", test_token_budget_api),
         ("Quality Evaluator API", test_quality_evaluator_api),
+        ("MCP Bridge API", test_mcp_bridge_api),
         ("OpenClaw Bridge API", test_openclaw_bridge_api),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 5]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 5, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

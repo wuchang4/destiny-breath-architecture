@@ -10,6 +10,7 @@ python -m pip install -e ".[dev]"
 python -m compileall destiny scripts tests examples
 python tests/test_all.py
 python examples/complete_agent_task.py
+python examples/mcp_bridge.py
 python examples/openclaw_bridge.py
 python examples/quality_gate.py
 python examples/sqlite_vector_memory.py
@@ -59,6 +60,11 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: python examples/complete_agent_task.py
+
+      - name: Run MCP bridge example
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python examples/mcp_bridge.py
 
       - name: Run OpenClaw bridge example
         env:
