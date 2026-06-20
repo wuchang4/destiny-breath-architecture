@@ -41,8 +41,9 @@ agent without forcing the agent itself to be rewritten.
 | OpenClaw bridge | Working | `OpenClawBridge` routes chat-style payloads through Destiny Runtime controls. |
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
+| Quality gate | Working | `QualityEvaluator` and `QualityRubric` score outputs and plug into `EvalCase.judge`. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 119 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 124 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -392,6 +393,32 @@ report = benchmark.run(enhanced_agent)
 print(report.summary())
 ```
 
+Use a deterministic quality gate when the output itself needs to be scored:
+
+```python
+from destiny import QualityEvaluator, QualityRubric
+
+rubric = QualityRubric(
+    min_score=0.85,
+    min_answer_chars=60,
+    required_terms=("Destiny", "runtime", "OpenClaw", "token budget"),
+    forbidden_terms=("unknown", "cannot"),
+)
+evaluator = QualityEvaluator(rubric)
+
+EvalCase(
+    name="quality-gated-status",
+    task="Explain Destiny runtime OpenClaw token budget status.",
+    judge=evaluator.judge(),
+)
+```
+
+Run the quality gate example:
+
+```bash
+python examples/quality_gate.py
+```
+
 ## CLI
 
 Run the engine:
@@ -479,6 +506,7 @@ route to interruption and require explicit confirmation/resume.
 | `destiny/token_budget.py` | Token estimates, compaction helpers, and budgeted provider views. |
 | `destiny/tools.py` | Tool adapter contracts and manifest helpers. |
 | `destiny/evals.py` | Benchmark and deterministic evaluation helpers. |
+| `destiny/quality.py` | Deterministic quality scoring and Benchmark-compatible quality gates. |
 | `destiny/hooks.py` | Lifecycle hooks and policy hook. |
 | `destiny/stores.py` | JSONL audit log and file-backed run store. |
 | `scripts/province_graph.py` | State graph runtime and checkpointing. |
@@ -492,6 +520,7 @@ route to interruption and require explicit confirmation/resume.
 | `examples/` | Runnable integration examples. |
 | `examples/complete_agent_task.py` | Complete repository-audit agent task. |
 | `examples/openclaw_bridge.py` | OpenClaw-style chat payload bridge demo. |
+| `examples/quality_gate.py` | Deterministic quality gate demo. |
 | `tests/test_all.py` | Deterministic smoke/integration coverage. |
 | `docs/ci-cd.md` | GitHub Actions CI/CD workflow template and token-scope note. |
 
@@ -510,10 +539,11 @@ The repository now provides:
 - OpenClaw-style bridge for chat payload integration.
 - Policy hooks.
 - Evaluation helpers.
+- Deterministic quality evaluator and Benchmark-compatible quality gates.
 - Audit logs and run result persistence.
 - Configurable state directory.
 - Token budget controls for context, model calls, memory retrieval, and tool results.
-- Deterministic test suite covering 119 scenarios.
+- Deterministic test suite covering 124 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits

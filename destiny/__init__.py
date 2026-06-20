@@ -17,6 +17,13 @@ from .providers import (
     StaticModelProvider,
     VectorMemoryProvider,
 )
+from .quality import (
+    QualityAssessment,
+    QualityCriterionResult,
+    QualityEvaluator,
+    QualityRubric,
+    quality_gate,
+)
 from .runtime import Runtime, RuntimeConfig
 from .token_budget import TokenBudgetPolicy, compact_value, estimate_tokens, truncate_text
 from .tools import FunctionTool, RegisteredTool, ToolAdapter, ToolResult, tool_manifest, tool_spec
@@ -46,6 +53,11 @@ __all__ = [
     "OpenClawRequest",
     "OpenClawResponse",
     "openclaw_skill_manifest",
+    "QualityAssessment",
+    "QualityCriterionResult",
+    "QualityEvaluator",
+    "QualityRubric",
+    "quality_gate",
     "FileMemoryProvider",
     "HashEmbeddingProvider",
     "KeywordMemoryProvider",

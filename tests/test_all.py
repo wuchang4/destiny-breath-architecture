@@ -1362,6 +1362,103 @@ def test_token_budget_api():
     print("  Token Budget API 6 scenarios passed!")
 
 
+def test_quality_evaluator_api():
+    """Test deterministic quality evaluator and quality gate."""
+    from destiny import (
+        AgentPlan,
+        Benchmark,
+        EvalCase,
+        FunctionTool,
+        QualityEvaluator,
+        QualityRubric,
+        Runtime,
+        RuntimeConfig,
+        quality_gate,
+    )
+
+    print("\n=== Testing Quality Evaluator API ===")
+
+    class QualityAgent:
+        name = "quality-agent"
+
+        def __init__(self, answer):
+            self.answer = answer
+
+        def plan(self, task, context):
+            return AgentPlan(task=task, tool_name="Answer", tool_args={"answer": self.answer})
+
+        def reflect(self, plan, run, context):
+            return run.tool_results[plan.tool_name].data
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def answer_tool(args, context):
+            return args["answer"]
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".quality")),
+            tools=[FunctionTool(name="Answer", required=("answer",), handler=answer_tool)],
+        )
+        rubric = QualityRubric(
+            min_score=0.8,
+            min_answer_chars=40,
+            required_terms=("Destiny", "runtime", "OpenClaw"),
+            forbidden_terms=("unsafe",),
+        )
+        evaluator = QualityEvaluator(rubric)
+        agent = runtime.enhance(QualityAgent(
+            "Destiny runtime improves OpenClaw agents with guarded tools and memory."
+        ))
+        outcome = agent.run("Explain Destiny runtime OpenClaw integration.", run_id="quality-pass")
+        assessment = evaluator.evaluate(task="Explain Destiny runtime OpenClaw integration.", outcome=outcome)
+        assert assessment.passed is True
+        assert assessment.score >= 0.8
+        assert "failed=none" in assessment.summary
+        print("  OK scenario 1: quality evaluator passes good outcome")
+
+        bad_agent = runtime.enhance(QualityAgent("unsafe short"))
+        bad_outcome = bad_agent.run("Explain Destiny runtime OpenClaw integration.", run_id="quality-fail")
+        bad_assessment = evaluator.evaluate(task="Explain Destiny runtime OpenClaw integration.", outcome=bad_outcome)
+        assert bad_assessment.passed is False
+        assert bad_assessment.score < assessment.score
+        assert any(item.name == "safety" and not item.passed for item in bad_assessment.criteria)
+        print("  OK scenario 2: quality evaluator explains failed outcome")
+
+        benchmark = Benchmark([
+            EvalCase(
+                name="quality-gate",
+                task="Explain Destiny runtime OpenClaw integration.",
+                expect_tool="Answer",
+                judge=evaluator.judge(),
+            )
+        ])
+        report = benchmark.run(agent)
+        assert report.passed == 1
+        assert "1/1 passed" in report.summary()
+        print("  OK scenario 3: evaluator judge plugs into Benchmark")
+
+        artifact_path = os.path.join(tmpdir, "report.md")
+        with open(artifact_path, "w", encoding="utf-8") as f:
+            f.write("# Report\n")
+        artifact_rubric = QualityRubric(
+            min_score=0.8,
+            required_terms=("report",),
+            required_artifact_keys=("report_path",),
+        )
+        artifact_assessment = QualityEvaluator(artifact_rubric).evaluate(
+            task="write report",
+            answer={"answer": "report written", "report_path": artifact_path},
+        )
+        assert artifact_assessment.passed is True
+        print("  OK scenario 4: evaluator validates required artifact keys")
+
+        gate = quality_gate(rubric)
+        assert gate(outcome, EvalCase(name="gate-helper", task="Explain Destiny runtime OpenClaw integration.")) is True
+        runtime.close()
+        print("  OK scenario 5: quality_gate helper returns EvalCase-compatible judge")
+
+    print("  Quality Evaluator API 5 scenarios passed!")
+
+
 def test_openclaw_bridge_api():
     """Test OpenClaw-style bridge integration."""
     from destiny import (
@@ -1669,13 +1766,14 @@ if __name__ == "__main__":
         ("Policy Hook", test_policy_hook),
         ("Provider API", test_provider_api),
         ("Token Budget API", test_token_budget_api),
+        ("Quality Evaluator API", test_quality_evaluator_api),
         ("OpenClaw Bridge API", test_openclaw_bridge_api),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

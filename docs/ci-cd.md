@@ -11,6 +11,7 @@ python -m compileall destiny scripts tests examples
 python tests/test_all.py
 python examples/complete_agent_task.py
 python examples/openclaw_bridge.py
+python examples/quality_gate.py
 python examples/sqlite_vector_memory.py
 python examples/standard_tools.py
 ```
@@ -63,6 +64,11 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: python examples/openclaw_bridge.py
+
+      - name: Run quality gate example
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python examples/quality_gate.py
 ```
 
 ## Token Permission Note

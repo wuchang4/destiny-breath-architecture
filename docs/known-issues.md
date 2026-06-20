@@ -4,7 +4,7 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 1 | External quality evaluation is missing; output quality is not judged by an independent evaluator. | High | Needs design |
+| 1 | Deterministic quality evaluation is available, but model-based external judging and calibration datasets are not shipped yet. | High | Needs LLM judge/calibration set |
 | 2 | The public `Runtime` has an OpenClaw-style bridge, but OpenAI/Codex/LangChain/AutoGen/MCP-style bridges are not shipped yet. | High | Needs more ecosystem bridges |
 | 3 | Vector memory backends are available, but production semantic quality still depends on real embedding providers and external vector database adapters. | Medium | Needs embedding/external vector adapters |
 | 4 | Auxiliary scripts such as heartbeat/checkpoint helpers still use user-local `~/.clawdbot` paths. | Medium | Needs shared path provider |
@@ -30,3 +30,4 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - `examples/complete_agent_task.py` now demonstrates a complete repository-audit agent task with artifact writing, SQLite vector memory, and benchmark verification.
 - Runtime now includes dependency-free token budget controls for context compaction, model prompts/responses, memory search results, and tool result payloads.
 - `OpenClawBridge` and `examples/openclaw_bridge.py` now provide a first ecosystem bridge for chat-style agent payloads.
+- `QualityEvaluator`, `QualityRubric`, and `examples/quality_gate.py` now provide deterministic output-quality gates for Benchmark runs.
