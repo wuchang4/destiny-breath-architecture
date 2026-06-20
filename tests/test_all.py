@@ -1223,6 +1223,145 @@ def test_provider_api():
     print("  🎉 Provider API 9 个场景全部通过！")
 
 
+def test_token_budget_api():
+    """Test runtime token budget controls."""
+    from destiny import (
+        AgentPlan,
+        FunctionTool,
+        KeywordMemoryProvider,
+        Runtime,
+        RuntimeConfig,
+        compact_value,
+        estimate_tokens,
+        truncate_text,
+    )
+
+    print("\n=== Testing Token Budget API ===")
+
+    # Scenario 1: rough estimates and text truncation are deterministic.
+    assert estimate_tokens("abcd", chars_per_token=4) == 1
+    truncated, was_truncated = truncate_text("x" * 100, 10, chars_per_token=1)
+    assert was_truncated
+    assert len(truncated) == 10
+    print("  OK scenario 1: estimate_tokens/truncate_text are deterministic")
+
+    # Scenario 2: nested values are compacted with metadata.
+    compacted, report = compact_value({"content": "x" * 100, "tail": "y" * 50}, 20, chars_per_token=1)
+    assert report["truncated"] is True
+    assert report["estimated_tokens_before"] > report["estimated_tokens_after"]
+    assert "_token_budget_truncated" in compacted or len(compacted["content"]) < 100
+    print("  OK scenario 2: compact_value shrinks nested payloads")
+
+    # Scenario 3: memory retrieved through runtime context is compacted.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        memory = KeywordMemoryProvider()
+        memory.put("long-memory", "long " + ("memory " * 80), {"source": "test"})
+        runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".destiny-memory-budget"),
+                token_chars_per_token=1,
+                max_memory_record_tokens=40,
+            ),
+            memory_provider=memory,
+        )
+        context = runtime.agent_context(agent_name="budget-agent")
+        hit = context["memory"].search("long", top_k=1)[0]
+        assert len(hit.content) <= 40
+        assert hit.metadata["token_budget"]["truncated"] is True
+        print("  OK scenario 3: runtime memory context returns compact records")
+
+    # Scenario 4: model provider wrapper compacts prompts and responses.
+    class CapturingModel:
+        name = "capturing"
+
+        def __init__(self):
+            self.prompt = ""
+            self.context = {}
+
+        def complete(self, prompt, context=None):
+            self.prompt = prompt
+            self.context = context or {}
+            return "response-" + ("z" * 100)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model = CapturingModel()
+        runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".destiny-model-budget"),
+                token_chars_per_token=1,
+                max_model_prompt_tokens=25,
+                max_model_response_tokens=20,
+                max_context_tokens=30,
+            ),
+            model_provider=model,
+        )
+        response = runtime.agent_context({"blob": "b" * 100}, agent_name="budget-agent")["model"].complete(
+            "p" * 100,
+            {"blob": "b" * 100},
+        )
+        assert len(model.prompt) <= 25
+        assert len(response) <= 20
+        assert model.context["token_budget_report"]["prompt"]["truncated"] is True
+        print("  OK scenario 4: model prompts/responses are compacted")
+
+    # Scenario 5: tool result payloads are compacted before reflection/storage.
+    class BudgetAgent:
+        name = "budget-agent"
+
+        def plan(self, task, context):
+            return AgentPlan(task=task, tool_name="Large", tool_args={})
+
+        def reflect(self, plan, run, context):
+            result = run.tool_results[plan.tool_name]
+            return {"data": result.data, "metadata": result.metadata}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def large_tool(args, context):
+            return {"content": "x" * 200, "keep": "small"}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".destiny-tool-budget"),
+                token_chars_per_token=1,
+                max_tool_result_tokens=50,
+            ),
+            tools=[FunctionTool(name="Large", handler=large_tool)],
+        )
+        outcome = runtime.enhance(BudgetAgent()).run("large result", run_id="token-budget-tool")
+        assert outcome.answer["metadata"]["token_budget"]["truncated"] is True
+        assert len(outcome.answer["data"]["content"]) < 200
+        assert outcome.answer["metadata"]["token_budget"]["estimated_tokens_after"] < outcome.answer["metadata"]["token_budget"]["estimated_tokens_before"]
+        print("  OK scenario 5: tool results are compacted")
+
+    # Scenario 6: token budget fields can be loaded from TOML.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = os.path.join(tmpdir, "destiny.toml")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                "\n".join([
+                    "[runtime]",
+                    "token_budget_enabled = true",
+                    "token_chars_per_token = 2",
+                    "max_context_tokens = 1234",
+                    "max_task_tokens = 234",
+                    "max_model_prompt_tokens = 345",
+                    "max_model_response_tokens = 456",
+                    "max_tool_result_tokens = 567",
+                    "max_memory_record_tokens = 678",
+                ])
+            )
+        config = RuntimeConfig.from_file(config_path)
+        assert config.token_chars_per_token == 2
+        assert config.max_context_tokens == 1234
+        assert config.token_budget_policy().max_tool_result_tokens == 567
+        print("  OK scenario 6: token budget config loads from TOML")
+
+    print("  Token Budget API 6 scenarios passed!")
+
+
 def test_circuit_breaker():
     """测试电路断路器（新增）。"""
     from circuit_breaker import CircuitBreaker, CircuitOpenError, CircuitState
@@ -1431,12 +1570,13 @@ if __name__ == "__main__":
         ("Enhancement Hooks", test_enhancement_hooks),
         ("Policy Hook", test_policy_hook),
         ("Provider API", test_provider_api),
+        ("Token Budget API", test_token_budget_api),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

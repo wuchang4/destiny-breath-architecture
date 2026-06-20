@@ -57,10 +57,7 @@ class EnhancedAgent:
         self.runtime = runtime
 
     def run(self, task: str, context: dict[str, Any] | None = None, run_id: str | None = None) -> AgentOutcome:
-        context = dict(context or {})
-        context.setdefault("agent_name", self.agent.name)
-        context.setdefault("model", self.runtime.model_provider)
-        context.setdefault("memory", self.runtime.memory_provider)
+        context = self.runtime.agent_context(context, agent_name=self.agent.name)
         self.runtime._run_hooks("before_plan", context, task)
         plan = self.agent.plan(task, context)
         if not isinstance(plan, AgentPlan):

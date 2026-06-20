@@ -28,3 +28,4 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - Runtime now exposes `list_tools()`, `get_tool()`, and `tool_manifest()` for external agent/tool-calling integration.
 - Package/runtime/tracing/User-Agent version metadata is unified around `0.5.0`.
 - `examples/complete_agent_task.py` now demonstrates a complete repository-audit agent task with artifact writing, SQLite vector memory, and benchmark verification.
+- Runtime now includes dependency-free token budget controls for context compaction, model prompts/responses, memory search results, and tool result payloads.

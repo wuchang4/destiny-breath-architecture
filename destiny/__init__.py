@@ -17,6 +17,7 @@ from .providers import (
     VectorMemoryProvider,
 )
 from .runtime import Runtime, RuntimeConfig
+from .token_budget import TokenBudgetPolicy, compact_value, estimate_tokens, truncate_text
 from .tools import FunctionTool, RegisteredTool, ToolAdapter, ToolResult, tool_manifest, tool_spec
 from .types import RunResult, RunStatus
 from .version import __version__
@@ -55,8 +56,12 @@ __all__ = [
     "RunStatus",
     "Runtime",
     "RuntimeConfig",
+    "TokenBudgetPolicy",
     "ToolAdapter",
     "ToolResult",
+    "compact_value",
+    "estimate_tokens",
+    "truncate_text",
     "tool_manifest",
     "tool_spec",
     "__version__",

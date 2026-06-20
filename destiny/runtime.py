@@ -25,6 +25,14 @@ from .providers import (
     VectorMemoryProvider,
 )
 from .stores import FileRunStore, JsonlAuditLog
+from .token_budget import (
+    BudgetedMemoryProvider,
+    BudgetedModelProvider,
+    TokenBudgetPolicy,
+    compact_value,
+    estimate_tokens,
+    truncate_text,
+)
 from .tools import ToolAdapter, ToolResult, tool_manifest
 from .types import RunResult, RunStatus
 
@@ -40,6 +48,14 @@ class RuntimeConfig:
     persist_runs: bool = True
     default_risk_level: str = "low"
     memory_backend: str = "file"
+    token_budget_enabled: bool = True
+    token_chars_per_token: int = 4
+    max_context_tokens: int = 8192
+    max_task_tokens: int = 2048
+    max_model_prompt_tokens: int = 8192
+    max_model_response_tokens: int = 4096
+    max_tool_result_tokens: int = 4096
+    max_memory_record_tokens: int = 1024
 
     VALID_PERMISSION_MODES = {"read-only", "workspace-write", "full-access"}
     VALID_RISK_LEVELS = {"low", "medium", "high"}
@@ -78,6 +94,14 @@ class RuntimeConfig:
             "persist_runs",
             "default_risk_level",
             "memory_backend",
+            "token_budget_enabled",
+            "token_chars_per_token",
+            "max_context_tokens",
+            "max_task_tokens",
+            "max_model_prompt_tokens",
+            "max_model_response_tokens",
+            "max_tool_result_tokens",
+            "max_memory_record_tokens",
         }
         unknown = sorted(set(data) - allowed)
         if unknown:
@@ -106,6 +130,19 @@ class RuntimeConfig:
                 "memory_backend must be one of: "
                 + ", ".join(sorted(self.VALID_MEMORY_BACKENDS))
             )
+        self.token_budget_policy().validate()
+
+    def token_budget_policy(self) -> TokenBudgetPolicy:
+        return TokenBudgetPolicy(
+            enabled=self.token_budget_enabled,
+            chars_per_token=self.token_chars_per_token,
+            max_context_tokens=self.max_context_tokens,
+            max_task_tokens=self.max_task_tokens,
+            max_model_prompt_tokens=self.max_model_prompt_tokens,
+            max_model_response_tokens=self.max_model_response_tokens,
+            max_tool_result_tokens=self.max_tool_result_tokens,
+            max_memory_record_tokens=self.max_memory_record_tokens,
+        )
 
 
 class Runtime:
@@ -131,6 +168,7 @@ class Runtime:
         self.memory_provider = memory_provider or self._default_memory_provider()
         self.audit = JsonlAuditLog(self.state_dir / "audit.jsonl") if self.config.audit_log else None
         self.run_store = FileRunStore(self.state_dir / "runs") if self.config.persist_runs else None
+        self.token_budget_policy = self.config.token_budget_policy()
 
     @classmethod
     def from_config(
@@ -202,6 +240,16 @@ class Runtime:
 
         return EnhancedAgent(agent, self)
 
+    def agent_context(self, context: dict[str, Any] | None = None, *, agent_name: str = "") -> dict[str, Any]:
+        """Return a context optimized for agent plan/reflect callbacks."""
+        result = self._compact_context(dict(context or {}))
+        if agent_name:
+            result.setdefault("agent_name", agent_name)
+        result.setdefault("model", self._model_for_context())
+        result.setdefault("memory", self._memory_for_context())
+        result.setdefault("token_budget", self.token_budget_policy.to_dict())
+        return result
+
     def run(
         self,
         task: str,
@@ -214,6 +262,7 @@ class Runtime:
         run_id = run_id or f"run_{int(time.time() * 1000)}"
         tool_args = tool_args or {}
         risk = risk_level or self.config.default_risk_level
+        task, task_report = self._compact_task(task)
         hook_context = {
             "run_id": run_id,
             "task": task,
@@ -222,6 +271,8 @@ class Runtime:
             "risk_level": risk,
             "model": self.model_provider,
             "memory": self.memory_provider,
+            "token_budget": self.token_budget_policy.to_dict(),
+            "token_budget_report": {"task": task_report},
         }
         try:
             self._run_hooks("before_run", hook_context)
@@ -290,8 +341,9 @@ class Runtime:
             "workspace_root": os.path.abspath(self.config.workspace_root),
             "state": engine_result.get("state", {}),
             "node_history": engine_result.get("node_history", []),
-            "model": self.model_provider,
-            "memory": self.memory_provider,
+            "model": self._model_for_context(),
+            "memory": self._memory_for_context(),
+            "token_budget": self.token_budget_policy.to_dict(),
         }
         try:
             self._run_hooks("before_tool", context, tool_name, args)
@@ -303,7 +355,7 @@ class Runtime:
             )
             self._run_hooks("after_tool", context, tool_name, result)
             return result
-        result = tool.execute(args, context)
+        result = self._compact_tool_result(tool.execute(args, context))
         self._run_hooks("after_tool", context, tool_name, result)
         return result
 
@@ -314,6 +366,79 @@ class Runtime:
     def _run_hooks(self, method_name: str, *args: Any) -> None:
         for hook in self.hooks:
             getattr(hook, method_name)(*args)
+
+    def _model_for_context(self) -> ModelProvider | BudgetedModelProvider | None:
+        if self.model_provider is None or not self.token_budget_policy.enabled:
+            return self.model_provider
+        return BudgetedModelProvider(self.model_provider, self.token_budget_policy)
+
+    def _memory_for_context(self) -> MemoryProvider | BudgetedMemoryProvider:
+        if not self.token_budget_policy.enabled:
+            return self.memory_provider
+        return BudgetedMemoryProvider(self.memory_provider, self.token_budget_policy)
+
+    def _compact_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        if not self.token_budget_policy.enabled:
+            return context
+        compacted, report = compact_value(
+            context,
+            self.token_budget_policy.max_context_tokens,
+            chars_per_token=self.token_budget_policy.chars_per_token,
+        )
+        if not isinstance(compacted, dict):
+            compacted = {}
+        compacted = dict(compacted)
+        if report["truncated"]:
+            compacted["token_budget_report"] = {"context": report}
+        return compacted
+
+    def _compact_task(self, task: str) -> tuple[str, dict[str, Any]]:
+        if not self.token_budget_policy.enabled:
+            return task, {
+                "estimated_tokens_before": estimate_tokens(task),
+                "estimated_tokens_after": estimate_tokens(task),
+                "budget_tokens": self.token_budget_policy.max_task_tokens,
+                "truncated": False,
+                "omitted_items": 0,
+            }
+        compacted, truncated = truncate_text(
+            task,
+            self.token_budget_policy.max_task_tokens,
+            chars_per_token=self.token_budget_policy.chars_per_token,
+        )
+        report = {
+            "estimated_tokens_before": estimate_tokens(
+                task,
+                chars_per_token=self.token_budget_policy.chars_per_token,
+            ),
+            "estimated_tokens_after": estimate_tokens(
+                compacted,
+                chars_per_token=self.token_budget_policy.chars_per_token,
+            ),
+            "budget_tokens": self.token_budget_policy.max_task_tokens,
+            "truncated": truncated,
+            "omitted_items": 0,
+        }
+        return compacted, report
+
+    def _compact_tool_result(self, result: ToolResult) -> ToolResult:
+        if not self.token_budget_policy.enabled:
+            return result
+        data, report = compact_value(
+            result.data,
+            self.token_budget_policy.max_tool_result_tokens,
+            chars_per_token=self.token_budget_policy.chars_per_token,
+        )
+        if not report["truncated"]:
+            return result
+        metadata = dict(result.metadata)
+        metadata["token_budget"] = report
+        return ToolResult(
+            ok=result.ok,
+            data=data,
+            error=result.error,
+            metadata=metadata,
+        )
 
     @staticmethod
     def _blocked_result(

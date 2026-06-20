@@ -37,10 +37,11 @@ agent without forcing the agent itself to be rewritten.
 | Tool manifest | Working | Runtime can export registered tools in native or generic function-calling format. |
 | Memory providers | Working | File keyword memory, JSON vector memory, and SQLite vector memory. |
 | Model providers | Working | Provider protocol plus deterministic static provider for tests. |
+| Token budget | Working | Dependency-free token estimates, context compaction, memory retrieval limits, model prompt/response limits, and tool result compaction. |
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 108 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 114 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -271,6 +272,37 @@ useful for tests and local scaffolding, not a substitute for high-quality model
 embeddings. Production integrations should plug in real embedding providers or
 external vector databases behind the same protocol.
 
+## Token Budget Controls
+
+Runtime token budget controls are enabled by default. They prevent common agent
+cost explosions without adding tokenizer dependencies:
+
+- Long agent context values are compacted before plan/reflect callbacks.
+- Model prompts, model context, and model responses are capped through a
+  budgeted provider view.
+- Memory search results returned through runtime context are capped per record.
+- Tool result payloads are compacted before reflection, run persistence, and
+  audit logs.
+
+Configure the rough budgets in `RuntimeConfig`:
+
+```python
+runtime = Runtime.from_config(
+    RuntimeConfig(
+        workspace_root=".",
+        max_context_tokens=4096,
+        max_model_prompt_tokens=4096,
+        max_model_response_tokens=2048,
+        max_tool_result_tokens=2048,
+        max_memory_record_tokens=512,
+    )
+)
+```
+
+The estimator defaults to `4` characters per token. For stricter local tests,
+set `token_chars_per_token=1`. Disable the layer with
+`token_budget_enabled=False` when an integration needs raw, unmodified payloads.
+
 ## Policy Hooks
 
 Hooks can observe or block runtime events.
@@ -361,6 +393,14 @@ audit_log = true
 persist_runs = true
 default_risk_level = "low"
 memory_backend = "file"
+token_budget_enabled = true
+token_chars_per_token = 4
+max_context_tokens = 8192
+max_task_tokens = 2048
+max_model_prompt_tokens = 8192
+max_model_response_tokens = 4096
+max_tool_result_tokens = 4096
+max_memory_record_tokens = 1024
 ```
 
 Allowed values:
@@ -370,6 +410,9 @@ Allowed values:
 | `permission_mode` | `read-only`, `workspace-write`, `full-access` |
 | `default_risk_level` | `low`, `medium`, `high` |
 | `memory_backend` | `file`, `vector`, `sqlite-vector` |
+| `token_budget_enabled` | `true`, `false` |
+| `token_chars_per_token` | positive integer rough estimator |
+| `max_*_tokens` | positive integer budget limits |
 
 ## Runtime Flow
 
@@ -393,6 +436,7 @@ route to interruption and require explicit confirmation/resume.
 | `destiny/agents.py` | Agent enhancement contracts and wrapper. |
 | `destiny/adapters.py` | Built-in file, shell, and HTTP tool adapters. |
 | `destiny/providers.py` | Model, memory, embedding, file/vector/SQLite providers. |
+| `destiny/token_budget.py` | Token estimates, compaction helpers, and budgeted provider views. |
 | `destiny/tools.py` | Tool adapter contracts and manifest helpers. |
 | `destiny/evals.py` | Benchmark and deterministic evaluation helpers. |
 | `destiny/hooks.py` | Lifecycle hooks and policy hook. |
@@ -426,7 +470,8 @@ The repository now provides:
 - Evaluation helpers.
 - Audit logs and run result persistence.
 - Configurable state directory.
-- Deterministic test suite covering 108 scenarios.
+- Token budget controls for context, model calls, memory retrieval, and tool results.
+- Deterministic test suite covering 114 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits
