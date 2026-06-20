@@ -265,10 +265,11 @@ class ProvinceGraph:
 
     CHECKPOINT_DIR = os.path.expanduser("~/.clawdbot/checkpoints")
 
-    def __init__(self, trace_id: Optional[str] = None):
+    def __init__(self, trace_id: Optional[str] = None, checkpoint_dir: Optional[str] = None):
         self.state: Dict[str, Any] = self._default_state()
         self.current_node: str = "START"
         self.node_history: List[str] = ["START"]
+        self.checkpoint_dir = checkpoint_dir or self.CHECKPOINT_DIR
         self._interrupted: bool = False
         self._interrupt_reason: str = ""
         self._node_handlers: Dict[str, Callable] = {}
@@ -413,7 +414,7 @@ class ProvinceGraph:
                 futures[future] = node_name
             else:
                 # 无 handler 的节点：模拟默认行为
-                default_result = self._simulate_default_node(node_name)
+                default_result = self._simulate_default_node(node_name, self.state)
                 if default_result:
                     results.append(default_result)
 
@@ -436,6 +437,10 @@ class ProvinceGraph:
         span.add_event("parallel_end", {"merged_updates": len(results)})
         self._trace.end_span("parallel")
 
+        # 高风险状态必须先进入阻断节点，不能被 v3 并行捷径绕过。
+        if self.state.get("risk_level") == "high":
+            merge_to = "阻断/预警"
+
         # 跳到合并目标
         self.current_node = merge_to
         self.node_history.append(merge_to)
@@ -447,6 +452,7 @@ class ProvinceGraph:
             self._save_checkpoint()
             return self.state
 
+        self._execute_current_node_body(merge_to)
         self._save_checkpoint()
         return self.state
 
@@ -464,10 +470,11 @@ class ProvinceGraph:
         finally:
             self._trace.end_span("ok")
 
-    def _simulate_default_node(self, node_name: str) -> Optional[Dict]:
+    def _simulate_default_node(self, node_name: str, state: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
         """模拟无 handler 的节点的默认行为（用于测试）。"""
+        state = state or {}
         defaults = {
-            "门下省": {"risk_level": "low", "memory_hits": []},
+            "门下省": {"risk_level": state.get("risk_level", "low"), "memory_hits": []},
             "尚书省": {"selected_tools": [], "route": "default"},
         }
         return defaults.get(node_name)
@@ -476,24 +483,28 @@ class ProvinceGraph:
 
     def _execute_single_node(self, next_node: str):
         """顺序执行单个节点。"""
-        span = self._trace.start_span(f"execute@{next_node}")
         self.current_node = next_node
         self.node_history.append(next_node)
+        self._execute_current_node_body(next_node)
+        self._save_checkpoint()
+
+    def _execute_current_node_body(self, node_name: str):
+        """执行当前节点的 handler/sub-graph，不改变 current_node 或 history。"""
+        span = self._trace.start_span(f"execute@{node_name}")
 
         # 子图检查
-        if next_node in self._sub_graphs:
-            sub_graph = self._sub_graphs[next_node]
-            span.add_event("sub_graph_start", {"node": next_node})
+        if node_name in self._sub_graphs:
+            sub_graph = self._sub_graphs[node_name]
+            span.add_event("sub_graph_start", {"node": node_name})
             sub_graph.state.update(self.state)
             sub_result = sub_graph.run()
             self.state = StateReducer.merge(self.state, sub_result)
-            span.add_event("sub_graph_end", {"node": next_node})
+            span.add_event("sub_graph_end", {"node": node_name})
             self._trace.end_span("ok")
-            self._save_checkpoint()
             return
 
         # 普通 handler
-        handler = self._node_handlers.get(next_node)
+        handler = self._node_handlers.get(node_name)
         if handler:
             try:
                 handler_result = handler(self.state, span)
@@ -502,12 +513,11 @@ class ProvinceGraph:
             except Exception as e:
                 span.set_attribute("error", str(e))
                 span.add_event("error", {"message": str(e)})
-                self.state["errors"].append(f"{next_node}: {e}")
+                self.state["errors"].append(f"{node_name}: {e}")
                 self._trace.end_span("error")
                 return
 
         self._trace.end_span("ok")
-        self._save_checkpoint()
 
     def _find_next_node(self) -> str:
         """查找当前节点的下一个节点。"""
@@ -528,8 +538,8 @@ class ProvinceGraph:
 
     def _save_checkpoint(self):
         checkpoint = self.serialize()
-        os.makedirs(self.CHECKPOINT_DIR, exist_ok=True)
-        checkpoint_path = os.path.join(self.CHECKPOINT_DIR, "province_graph.json")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(self.checkpoint_dir, "province_graph.json")
         tmp_path = checkpoint_path + ".tmp"
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:

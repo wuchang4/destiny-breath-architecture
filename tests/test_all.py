@@ -29,8 +29,16 @@ import json
 import tempfile
 import time
 
+# Windows terminals often default to GBK; make direct test runs deterministic.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 将 scripts 目录加入路径
-SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts")
+sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, SCRIPTS_DIR)
 
 
@@ -162,10 +170,23 @@ def test_model_router():
         assert len(available) == 4
         print("  ✅ 场景 6: 可用模型列表正确")
 
+        # 场景 7: 不可达模型不能被误判为可用
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as unavailable_file:
+            json.dump([
+                {"id": "offline-model", "name": "Offline", "url": "http://127.0.0.1:1/v1/chat/completions"}
+            ], unavailable_file)
+            unavailable_path = unavailable_file.name
+        try:
+            offline_router = ModelRouter(models_json_path=unavailable_path)
+            assert offline_router.check_availability("offline-model", timeout=0.1) is False
+            print("  ✅ 场景 7: 不可达模型判定为不可用")
+        finally:
+            os.unlink(unavailable_path)
+
     finally:
         os.unlink(tmp_path)
 
-    print("  🎉 模型路由层全部 6 个测试通过！")
+    print("  🎉 模型路由层全部 7 个测试通过！")
 
 
 def test_config_merger():
@@ -228,10 +249,10 @@ def test_config_merger():
 
 
 def test_province_graph():
-    """测试三省图 State Graph v2。"""
+    """测试三省图 State Graph v3。"""
     from province_graph import ProvinceGraph
 
-    print("\n=== 测试三省图 State Graph v2 ===")
+    print("\n=== 测试三省图 State Graph v3 ===")
 
     # 场景 1: 创建图
     graph = ProvinceGraph()
@@ -244,88 +265,82 @@ def test_province_graph():
     assert graph.current_node == "中书省"
     print("  ✅ 场景 2: START → 中书省")
 
-    # 场景 3: 中书省 → 门下省（confidence ≥ 0.6）
+    # 场景 3: 中书省 → 门下省‖尚书省 → 执行节点（confidence ≥ 0.6）
     graph.step({"confidence": 0.8})
-    assert graph.current_node == "门下省"
-    print("  ✅ 场景 3: 中书省 → 门下省 (confidence=0.8)")
-
-    # 场景 4: 门下省 → 尚书省（risk=low）
-    graph.step({"risk_level": "low"})
-    assert graph.current_node == "尚书省"
-    print("  ✅ 场景 4: 门下省 → 尚书省 (risk=low)")
-
-    # 场景 5: 尚书省 → 执行节点
-    graph.step()
     assert graph.current_node == "执行节点"
-    print("  ✅ 场景 5: 尚书省 → 执行节点")
+    assert "[门下省‖尚书省]" in graph.node_history
+    print("  ✅ 场景 3: v3 并行组执行并合并到执行节点 (confidence=0.8)")
 
-    # 场景 6: 执行节点 → AAR/Checkpt
+    # 场景 4: 默认并行节点会给出路由规划
+    assert graph.state["risk_level"] == "low"
+    assert graph.state["route"] == "default"
+    print("  ✅ 场景 4: 并行 reducer 合并风险与路由状态")
+
+    # 场景 5: 执行节点 → AAR/Checkpt
     graph.step()
     assert graph.current_node == "AAR/Checkpt"
-    print("  ✅ 场景 6: 执行节点 → AAR/Checkpt")
+    print("  ✅ 场景 5: 执行节点 → AAR/Checkpt")
 
-    # 场景 7: AAR/Checkpt → END
+    # 场景 6: AAR/Checkpt → END
     graph.step()
     assert graph.current_node == "END"
     assert graph.is_finished()
-    print("  ✅ 场景 7: AAR/Checkpt → END")
+    print("  ✅ 场景 6: AAR/Checkpt → END")
 
-    # 场景 8: 低置信度走澄清分支
+    # 场景 7: 低置信度走澄清分支
     g2 = ProvinceGraph()
     g2.step()
     g2.step({"confidence": 0.3})
     assert g2.current_node == "澄清分支"
-    print("  ✅ 场景 8: 低置信度走澄清分支 (confidence=0.3)")
+    print("  ✅ 场景 7: 低置信度走澄清分支 (confidence=0.3)")
 
-    # 场景 9: 高风险走阻断（v2：应触发中断）
+    # 场景 8: 高风险在 v3 并行路径后仍会触发中断
     g3 = ProvinceGraph()
     g3.step()
-    g3.step({"confidence": 0.9})
-    g3.step({"risk_level": "high"})
+    g3.step({"confidence": 0.9, "risk_level": "high"})
     assert g3.current_node == "阻断/预警"
     assert g3.is_interrupted(), "高风险应触发中断"
     assert "用户确认" in g3.get_interrupt_reason()
-    print("  ✅ 场景 9: 高风险触发中断 (v2 新增)")
+    print("  ✅ 场景 8: 高风险触发中断 (v3 并行路径)")
 
-    # 场景 10: 中断后恢复
+    # 场景 9: 中断后恢复
     g3.resume({"user_confirmed": True})
     assert not g3.is_interrupted()
     g3.step()
     assert g3.is_finished()
-    print("  ✅ 场景 10: 中断后恢复执行 (v2 新增)")
+    print("  ✅ 场景 9: 中断后恢复执行")
 
-    # 场景 11: 重置
+    # 场景 10: 重置
     graph.reset()
     assert graph.current_node == "START"
     assert not graph.is_finished()
     assert not graph.is_interrupted()
-    print("  ✅ 场景 11: 图重置成功")
+    print("  ✅ 场景 10: 图重置成功")
 
-    # 场景 12: 执行追踪 (v2 新增)
+    # 场景 11: 执行追踪
     g4 = ProvinceGraph()
     g4.step()
     g4.step({"confidence": 0.8})
-    g4.step({"risk_level": "low"})
     trace = g4.trace
     assert len(trace.spans) > 0, "应有执行 span"
-    print("  ✅ 场景 12: 执行追踪记录 span (v2 新增)")
+    print("  ✅ 场景 11: 执行追踪记录 span")
 
-    # 场景 13: 序列化/反序列化
+    # 场景 12: 序列化/反序列化
     data = g4.serialize()
-    assert data["version"] == 2
+    assert data["version"] == 3
     assert "current_node" in data
     assert "state" in data
     g5 = ProvinceGraph.deserialize(data)
     assert g5.current_node == g4.current_node
-    print("  ✅ 场景 13: 序列化/反序列化 (v2)")
+    print("  ✅ 场景 12: 序列化/反序列化 (v3)")
 
-    # 场景 14: run() 自动执行
+    # 场景 13: run() 自动执行
     g6 = ProvinceGraph()
     g6.run()
     assert g6.is_finished()
-    print("  ✅ 场景 14: run() 自动执行到 END (v2 新增)")
+    print("  ✅ 场景 13: run() 自动执行到 END")
 
-    print("  🎉 三省图 v2 全部 14 个测试通过！")
+    print("  🎉 三省图 v3 全部 13 个测试通过！")
 
 
 def test_execution_tracer():
@@ -446,8 +461,14 @@ def test_integration():
     from config_merger import ConfigMerger
     from province_graph import ProvinceGraph
     from execution_tracer import ExecutionTracer
+    from destiny_engine import parse_tool_args
 
     print("\n=== 全链路集成测试 ===")
+
+    # 场景 0: CLI 参数解析兼容 JSON 与 KEY=VALUE
+    parsed_args = parse_tool_args('{"query":"AI"}', ["limit=3", "fresh=true"])
+    assert parsed_args == {"query": "AI", "limit": 3, "fresh": True}
+    print("  ✅ 场景 0: CLI 参数解析兼容 JSON 与 KEY=VALUE")
 
     # 场景 1: 配置 → 安全链 → 图 → 追踪
     merger = ConfigMerger()
@@ -472,14 +493,9 @@ def test_integration():
         s.set_attribute("risk_level", "low")
         graph.step({"risk_level": "low"})
 
-    with tracer.span("尚书省"):
-        graph.step()  # 门下省 → 尚书省
-
-    with tracer.span("执行"):
-        graph.step()  # 尚书省 → 执行节点
-
     assert graph.current_node == "执行节点"
-    print("  ✅ 场景 1: 配置→安全链→图→追踪 全链路")
+    assert "[门下省‖尚书省]" in graph.node_history
+    print("  ✅ 场景 1: 配置→安全链→v3并行图→追踪 全链路")
 
     # 场景 2: 模型路由 + 安全链 + 中断恢复
     router = ModelRouter()
@@ -493,8 +509,7 @@ def test_integration():
     # 场景 3: 高风险路径触发中断 → 用户确认 → 恢复
     g = ProvinceGraph()
     g.step()
-    g.step({"confidence": 0.9})
-    g.step({"risk_level": "high"})
+    g.step({"confidence": 0.9, "risk_level": "high"})
     assert g.is_interrupted()
     g.resume({"user_confirmed": True})
     g.step()
@@ -504,7 +519,699 @@ def test_integration():
     # 追踪摘要
     print(f"\n{tracer.summary()}")
 
-    print("  🎉 全链路集成测试 3 个场景全部通过！")
+    print("  🎉 全链路集成测试 4 个场景全部通过！")
+
+
+def test_public_runtime_api():
+    """测试公开 Runtime API（生产级嵌入入口）。"""
+    from destiny import FunctionTool, Runtime, RuntimeConfig, RunStatus
+
+    print("\n=== 测试公开 Runtime API ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def echo(args, context):
+            return {"echo": args["message"], "history": context["node_history"]}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[
+                FunctionTool(
+                    name="Echo",
+                    required=("message",),
+                    handler=echo,
+                    description="Echo one message.",
+                )
+            ],
+        )
+
+        result = runtime.run(
+            task="echo message",
+            tool_name="Echo",
+            tool_args={"message": "hello"},
+            run_id="test-runtime",
+        )
+        assert result.status == RunStatus.SUCCEEDED
+        assert result.tool_results["Echo"].ok
+        assert result.tool_results["Echo"].data["echo"] == "hello"
+        state_dir = os.path.join(tmpdir, ".destiny")
+        assert os.path.exists(os.path.join(state_dir, "runs", "test-runtime.json"))
+        assert os.path.exists(os.path.join(state_dir, "audit.jsonl"))
+        assert result.trace_path and os.path.abspath(result.trace_path).startswith(os.path.abspath(state_dir))
+        assert os.path.exists(os.path.join(state_dir, "checkpoints", "province_graph.json"))
+        assert os.path.exists(os.path.join(state_dir, "checkpoints", "destiny_engine.json"))
+
+        cache_probe = runtime.run(
+            task="cache probe",
+            tool_name="WebSearch",
+            tool_args={"query": "runtime cache probe"},
+            run_id="cache-probe",
+        )
+        assert cache_probe.status == RunStatus.SUCCEEDED
+        assert os.path.exists(os.path.join(state_dir, "cache", "tool_results.json"))
+        print("  ✅ 场景 1: 注册工具执行并持久化 run/audit")
+
+        missing_tool = runtime.run(
+            task="missing tool",
+            tool_name="NotRegistered",
+            tool_args={},
+            run_id="missing-tool",
+        )
+        assert missing_tool.status == RunStatus.SUCCEEDED
+        assert not missing_tool.tool_results["NotRegistered"].ok
+        assert "not registered" in missing_tool.tool_results["NotRegistered"].error
+        print("  ✅ 场景 2: 未注册工具返回可解释结果")
+
+        invalid_args = runtime.run(
+            task="bad args",
+            tool_name="Echo",
+            tool_args={},
+            run_id="bad-args",
+        )
+        assert not invalid_args.tool_results["Echo"].ok
+        assert "missing required" in invalid_args.tool_results["Echo"].error
+        print("  ✅ 场景 3: 工具参数校验错误被标准化")
+
+        assert runtime.list_tools() == ["Echo"]
+        assert runtime.get_tool("Echo") is not None
+        manifest = runtime.tool_manifest()
+        assert manifest[0]["name"] == "Echo"
+        assert manifest[0]["schema"]["required"] == ["message"]
+        function_manifest = runtime.tool_manifest(format="function")
+        assert function_manifest[0]["type"] == "function"
+        assert function_manifest[0]["function"]["name"] == "Echo"
+        try:
+            runtime.tool_manifest(format="unknown")
+            assert False, "非法 manifest format 应报错"
+        except ValueError as e:
+            assert "format" in str(e)
+        print("  ✅ 场景 4: Runtime 可导出稳定工具注册表和 manifest")
+
+    print("  🎉 公开 Runtime API 4 个场景全部通过！")
+
+
+def test_standard_tool_adapters():
+    """测试标准工具 Adapter。"""
+    import http.server
+    import threading
+    from destiny import (
+        FileReadTool,
+        FileWriteTool,
+        HttpGetTool,
+        Runtime,
+        RuntimeConfig,
+        RunStatus,
+        ShellCommandTool,
+        standard_tools,
+    )
+
+    print("\n=== 测试标准工具 Adapter ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FileWriteTool(), FileReadTool(), ShellCommandTool()],
+        )
+
+        write_result = runtime.run(
+            "write file",
+            tool_name="WriteFile",
+            tool_args={"path": "notes/out.txt", "content": "adapter file content"},
+            run_id="adapter-write",
+        )
+        assert write_result.tool_results["WriteFile"].ok
+        read_result = runtime.run(
+            "read file",
+            tool_name="Read",
+            tool_args={"path": "notes/out.txt"},
+            run_id="adapter-read",
+        )
+        assert read_result.tool_results["Read"].ok
+        assert read_result.tool_results["Read"].data["content"] == "adapter file content"
+        print("  ✅ 场景 1: FileWriteTool/FileReadTool 可通过 Runtime 写读工作区文件")
+
+        readonly_runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".readonly"),
+                permission_mode="read-only",
+            ),
+            tools=[FileWriteTool()],
+        )
+        blocked_write = readonly_runtime.run(
+            "blocked write",
+            tool_name="WriteFile",
+            tool_args={"path": "blocked.txt", "content": "no"},
+            run_id="blocked-write",
+        )
+        assert blocked_write.status == RunStatus.INTERRUPTED
+        assert not blocked_write.tool_results["WriteFile"].ok
+        assert blocked_write.tool_results["WriteFile"].metadata["stage"] == "orchestration"
+        print("  ✅ 场景 2: read-only Runtime 阻断写入 Adapter")
+
+        outside_path = os.path.abspath(os.path.join(tmpdir, "..", "outside.txt"))
+        direct_read = FileReadTool().execute({"path": outside_path}, {"workspace_root": tmpdir})
+        assert not direct_read.ok
+        assert "escapes workspace" in direct_read.error
+        print("  ✅ 场景 3: Adapter 自身阻断工作区外路径")
+
+        command = f'"{sys.executable}" -c "print(\'adapter-ok\')"'
+        shell_result = runtime.run(
+            "run safe shell command",
+            tool_name="Bash",
+            tool_args={"command": command, "timeout": 5},
+            run_id="adapter-shell",
+        )
+        assert shell_result.tool_results["Bash"].ok
+        assert "adapter-ok" in shell_result.tool_results["Bash"].data["stdout"]
+        print("  ✅ 场景 4: ShellCommandTool 可执行安全命令并捕获输出")
+
+        blocked_http = HttpGetTool().execute({"url": "http://127.0.0.1:1"}, {"workspace_root": tmpdir})
+        assert not blocked_http.ok
+        assert "private or local host" in blocked_http.error
+        print("  ✅ 场景 5: HttpGetTool 默认阻断 private/local host")
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"adapter-http-ok")
+
+            def log_message(self, format, *args):
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/"
+            http_runtime = Runtime.from_config(
+                RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".http")),
+                tools=[HttpGetTool(allow_private_hosts=True)],
+            )
+            http_result = http_runtime.run(
+                "fetch local fixture",
+                tool_name="WebFetch",
+                tool_args={"url": url, "timeout": 5, "max_bytes": 1000},
+                run_id="adapter-http",
+            )
+            assert http_result.tool_results["WebFetch"].ok
+            assert http_result.tool_results["WebFetch"].data["content"] == "adapter-http-ok"
+            print("  ✅ 场景 6: HttpGetTool 显式允许时可抓取本地测试服务")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        default_tool_names = {tool.name for tool in standard_tools()}
+        assert default_tool_names == {"Read", "WriteFile"}
+        expanded_tool_names = {tool.name for tool in standard_tools(shell=True, http=True)}
+        assert {"Read", "WriteFile", "Bash", "WebFetch"} <= expanded_tool_names
+        print("  ✅ 场景 7: standard_tools 默认保守，shell/http 显式启用")
+
+    print("  🎉 标准工具 Adapter 7 个场景全部通过！")
+
+
+def test_runtime_config_file():
+    """测试 destiny.toml 配置加载。"""
+    from destiny import Runtime, RuntimeConfig, SqliteVectorMemoryProvider, VectorMemoryProvider
+
+    print("\n=== 测试 Runtime TOML 配置 ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = os.path.join(tmpdir, "destiny.toml")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                "\n".join([
+                    "[runtime]",
+                    f"workspace_root = {json.dumps(tmpdir)}",
+                    'state_dir = ".custom-state"',
+                    'permission_mode = "read-only"',
+                    "audit_log = false",
+                    "persist_runs = false",
+                    'default_risk_level = "medium"',
+                    'memory_backend = "vector"',
+                ])
+            )
+
+        config = RuntimeConfig.from_file(config_path)
+        assert config.workspace_root == tmpdir
+        assert config.state_dir == ".custom-state"
+        assert config.permission_mode == "read-only"
+        assert config.audit_log is False
+        assert config.persist_runs is False
+        assert config.default_risk_level == "medium"
+        assert config.memory_backend == "vector"
+        runtime = Runtime.from_config(config_path)
+        assert runtime.config.permission_mode == "read-only"
+        assert isinstance(runtime.memory_provider, VectorMemoryProvider)
+        print("  ✅ 场景 1: 从 [runtime] TOML 加载配置")
+
+        default_state_path = os.path.join(tmpdir, "default-state.toml")
+        with open(default_state_path, "w", encoding="utf-8") as f:
+            f.write('permission_mode = "workspace-write"\n')
+        default_config = RuntimeConfig.from_file(default_state_path)
+        assert default_config.state_dir == os.path.join(tmpdir, ".destiny")
+        print("  ✅ 场景 2: 未设置 state_dir 时相对配置文件目录生成 .destiny")
+
+        bad_key_path = os.path.join(tmpdir, "bad-key.toml")
+        with open(bad_key_path, "w", encoding="utf-8") as f:
+            f.write("[runtime]\nunknown = true\n")
+        try:
+            RuntimeConfig.from_file(bad_key_path)
+            assert False, "未知键应报错"
+        except ValueError as e:
+            assert "unknown runtime config keys" in str(e)
+        print("  ✅ 场景 3: 未知配置键会报错")
+
+        bad_value_path = os.path.join(tmpdir, "bad-value.toml")
+        with open(bad_value_path, "w", encoding="utf-8") as f:
+            f.write('[runtime]\npermission_mode = "root"\n')
+        try:
+            RuntimeConfig.from_file(bad_value_path)
+            assert False, "非法 permission_mode 应报错"
+        except ValueError as e:
+            assert "permission_mode" in str(e)
+        print("  ✅ 场景 4: 非法枚举值会报错")
+
+        bad_memory_backend_path = os.path.join(tmpdir, "bad-memory-backend.toml")
+        with open(bad_memory_backend_path, "w", encoding="utf-8") as f:
+            f.write('[runtime]\nmemory_backend = "remote"\n')
+        try:
+            RuntimeConfig.from_file(bad_memory_backend_path)
+            assert False, "非法 memory_backend 应报错"
+        except ValueError as e:
+            assert "memory_backend" in str(e)
+        print("  ✅ 场景 5: 非法 memory backend 会报错")
+
+        sqlite_config = RuntimeConfig.from_mapping({
+            "workspace_root": tmpdir,
+            "state_dir": os.path.join(tmpdir, ".sqlite-memory"),
+            "memory_backend": "sqlite-vector",
+        })
+        sqlite_runtime = Runtime.from_config(sqlite_config)
+        assert isinstance(sqlite_runtime.memory_provider, SqliteVectorMemoryProvider)
+        sqlite_runtime.close()
+        print("  ✅ 场景 6: sqlite-vector memory backend 可通过 RuntimeConfig 启用")
+
+    print("  🎉 Runtime TOML 配置 6 个场景全部通过！")
+
+
+def test_agent_enhancement_api():
+    """测试智能体增强 API。"""
+    from destiny import AgentPlan, FunctionTool, Runtime, RuntimeConfig, RunStatus
+
+    print("\n=== 测试智能体增强 API ===")
+
+    class DemoAgent:
+        name = "demo-agent"
+
+        def plan(self, task, context):
+            return AgentPlan(
+                task=task,
+                tool_name="Echo",
+                tool_args={"message": task, "agent": context["agent_name"]},
+                rationale="echo through guarded runtime",
+            )
+
+        def reflect(self, plan, run, context):
+            result = run.tool_results[plan.tool_name]
+            return {
+                "status": run.status.value,
+                "ok": result.ok,
+                "payload": result.data,
+                "rationale": plan.rationale,
+            }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def echo(args, context):
+            return {"message": args["message"], "agent": args["agent"], "nodes": context["node_history"]}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FunctionTool(name="Echo", required=("message", "agent"), handler=echo)],
+        )
+        enhanced = runtime.enhance(DemoAgent())
+        outcome = enhanced.run("improve this agent", run_id="enhanced-agent")
+
+        assert outcome.run.status == RunStatus.SUCCEEDED
+        assert outcome.plan.tool_name == "Echo"
+        assert outcome.answer["ok"] is True
+        assert outcome.answer["payload"]["agent"] == "demo-agent"
+        assert "执行节点" in outcome.answer["payload"]["nodes"]
+        assert os.path.exists(os.path.join(tmpdir, ".destiny", "runs", "enhanced-agent.json"))
+        print("  ✅ 场景 1: AgentAdapter 被 Runtime 增强并完成工具执行/反思")
+
+        class BadAgent:
+            name = "bad-agent"
+
+            def plan(self, task, context):
+                return {"not": "a plan"}
+
+            def reflect(self, plan, run, context):
+                return None
+
+        bad = runtime.enhance(BadAgent())
+        try:
+            bad.run("bad")
+            assert False, "非 AgentPlan 应报错"
+        except TypeError as e:
+            assert "AgentPlan" in str(e)
+        print("  ✅ 场景 2: 非结构化 plan 会被拒绝")
+
+    print("  🎉 智能体增强 API 2 个场景全部通过！")
+
+
+def test_benchmark_api():
+    """测试增强智能体评估 API。"""
+    from destiny import AgentPlan, Benchmark, EvalCase, FunctionTool, Runtime, RuntimeConfig, RunStatus
+
+    print("\n=== 测试 Benchmark API ===")
+
+    class EvalAgent:
+        name = "eval-agent"
+
+        def plan(self, task, context):
+            return AgentPlan(
+                task=task,
+                tool_name=context.get("tool", "Echo"),
+                tool_args=context.get("tool_args", {"message": task}),
+                risk_level=context.get("risk_level"),
+            )
+
+        def reflect(self, plan, run, context):
+            return {"status": run.status.value, "tool": plan.tool_name}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def echo(args, context):
+            return {"message": args["message"], "path": context["node_history"]}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FunctionTool(name="Echo", required=("message",), handler=echo)],
+        )
+        agent = runtime.enhance(EvalAgent())
+        benchmark = Benchmark([
+            EvalCase(
+                name="echo-success",
+                task="hello",
+                expect_tool="Echo",
+                judge=lambda outcome, case: outcome.run.tool_results["Echo"].data["message"] == "hello",
+            ),
+            EvalCase(
+                name="danger-blocked",
+                task="delete root",
+                context={"tool": "Bash", "tool_args": {"command": "rm -rf /"}},
+                expect_status=RunStatus.INTERRUPTED,
+                expect_tool="Bash",
+            ),
+        ])
+        report = benchmark.run(agent)
+        assert report.total == 2
+        assert report.passed == 2
+        assert report.failed == 0
+        assert report.interrupted == 1
+        assert report.tool_success_rate == 1.0
+        assert "2/2 passed" in report.summary()
+        print("  ✅ 场景 1: Benchmark 汇总成功率/中断/工具成功率")
+
+        bad_benchmark = Benchmark([
+            EvalCase(
+                name="wrong-tool",
+                task="hello",
+                expect_tool="Missing",
+            )
+        ])
+        bad_report = bad_benchmark.run(agent)
+        assert bad_report.failed == 1
+        assert bad_report.success_rate == 0.0
+        print("  ✅ 场景 2: Benchmark 能识别失败用例")
+
+    print("  🎉 Benchmark API 2 个场景全部通过！")
+
+
+def test_enhancement_hooks():
+    """测试可插拔增强 hooks。"""
+    from destiny import AgentPlan, FunctionTool, RecordingHook, Runtime, RuntimeConfig
+
+    print("\n=== 测试 Enhancement Hooks ===")
+
+    class HookAgent:
+        name = "hook-agent"
+
+        def plan(self, task, context):
+            return AgentPlan(task=task, tool_name="Echo", tool_args={"message": task})
+
+        def reflect(self, plan, run, context):
+            return run.tool_results[plan.tool_name].data
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def echo(args, context):
+            return {"message": args["message"]}
+
+        hook = RecordingHook()
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FunctionTool(name="Echo", required=("message",), handler=echo)],
+            hooks=[hook],
+        )
+        outcome = runtime.enhance(HookAgent()).run("hook task", run_id="hook-run")
+
+        assert outcome.answer["message"] == "hook task"
+        event_names = [event for event, _ in hook.events]
+        expected = [
+            "before_plan",
+            "after_plan",
+            "before_run",
+            "before_tool",
+            "after_tool",
+            "after_run",
+            "before_reflect",
+            "after_reflect",
+        ]
+        for event in expected:
+            assert event in event_names, f"missing hook event: {event}"
+        assert event_names.index("before_plan") < event_names.index("after_plan")
+        assert event_names.index("before_tool") < event_names.index("after_tool")
+        print("  ✅ 场景 1: hooks 覆盖 plan/run/tool/reflect 生命周期")
+
+        second_hook = RecordingHook(name="second")
+        runtime.register_hook(second_hook)
+        runtime.run("direct runtime", tool_name="Echo", tool_args={"message": "direct"}, run_id="direct-hook")
+        assert any(event == "before_run" for event, _ in second_hook.events)
+        print("  ✅ 场景 2: Runtime 可动态注册 hook")
+
+    print("  🎉 Enhancement Hooks 2 个场景全部通过！")
+
+
+def test_policy_hook():
+    """测试策略 hook 的阻断能力。"""
+    from destiny import FunctionTool, PolicyHook, RecordingHook, Runtime, RuntimeConfig, RunStatus
+
+    print("\n=== 测试 Policy Hook ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        executed = {"count": 0}
+
+        def echo(args, context):
+            executed["count"] += 1
+            return {"message": args["message"]}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FunctionTool(name="Echo", required=("message",), handler=echo)],
+            hooks=[PolicyHook(denied_task_keywords={"forbidden"})],
+        )
+
+        blocked_run = runtime.run("this is forbidden", tool_name="Echo", tool_args={"message": "nope"}, run_id="blocked")
+        assert blocked_run.status == RunStatus.FAILED
+        assert blocked_run.current_node == "POLICY_BLOCKED"
+        assert "policy blocked" in blocked_run.errors[0]
+        assert executed["count"] == 0
+        assert os.path.exists(os.path.join(tmpdir, ".destiny", "runs", "blocked.json"))
+        print("  ✅ 场景 1: before_run 策略阻断返回标准 RunResult")
+
+        recording = RecordingHook()
+        tool_policy_runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny2")),
+            tools=[FunctionTool(name="Echo", required=("message",), handler=echo)],
+            hooks=[PolicyHook(denied_tools={"Echo"}), recording],
+        )
+        tool_blocked = tool_policy_runtime.run(
+            "allowed task",
+            tool_name="Echo",
+            tool_args={"message": "blocked tool"},
+            run_id="tool-blocked",
+        )
+        assert tool_blocked.status == RunStatus.SUCCEEDED
+        assert not tool_blocked.tool_results["Echo"].ok
+        assert "policy blocked" in tool_blocked.tool_results["Echo"].error
+        assert executed["count"] == 0
+        assert any(event == "after_tool" for event, _ in recording.events)
+        print("  ✅ 场景 2: before_tool 策略阻断返回标准 ToolResult")
+
+        risk_runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny3")),
+            hooks=[PolicyHook(max_risk_level="medium")],
+        )
+        high_risk = risk_runtime.run("high risk task", risk_level="high", run_id="high-risk")
+        assert high_risk.status == RunStatus.FAILED
+        assert "risk level denied" in high_risk.errors[0]
+        print("  ✅ 场景 3: 风险等级策略阻断生效")
+
+    print("  🎉 Policy Hook 3 个场景全部通过！")
+
+
+def test_provider_api():
+    """测试模型/记忆 Provider API。"""
+    from destiny import (
+        AgentPlan,
+        FileMemoryProvider,
+        HashEmbeddingProvider,
+        FunctionTool,
+        KeywordMemoryProvider,
+        Runtime,
+        RuntimeConfig,
+        SqliteVectorMemoryProvider,
+        StaticModelProvider,
+        VectorMemoryProvider,
+    )
+
+    print("\n=== 测试 Provider API ===")
+
+    class ProviderAgent:
+        name = "provider-agent"
+
+        def plan(self, task, context):
+            message = context["model"].complete(task, context)
+            return AgentPlan(task=task, tool_name="Remember", tool_args={"message": message})
+
+        def reflect(self, plan, run, context):
+            hits = context["memory"].search("framework memory")
+            return {"hits": [hit.content for hit in hits], "tool_ok": run.tool_results["Remember"].ok}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model = StaticModelProvider("framework memory saved")
+        memory = KeywordMemoryProvider()
+
+        def remember(args, context):
+            record = context["memory"].put("last", args["message"], {"source": "tool"})
+            return {"key": record.key}
+
+        runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
+            tools=[FunctionTool(name="Remember", required=("message",), handler=remember)],
+            model_provider=model,
+            memory_provider=memory,
+        )
+        outcome = runtime.enhance(ProviderAgent()).run("use provider", run_id="provider")
+        assert outcome.answer["tool_ok"] is True
+        assert outcome.answer["hits"] == ["framework memory saved"]
+        assert memory.search("saved")[0].metadata["source"] == "tool"
+        print("  ✅ 场景 1: Agent/Tool 可通过 context 使用 model 和 memory provider")
+
+        memory.put("a", "alpha framework")
+        memory.put("b", "beta framework")
+        results = memory.search("framework", top_k=1)
+        assert len(results) == 1
+        assert results[0].key in {"a", "b", "last"}
+        assert model.complete("anything") == "framework memory saved"
+        print("  ✅ 场景 2: 基础 provider 实现可独立使用")
+
+        memory_path = os.path.join(tmpdir, "memory.json")
+        file_memory = FileMemoryProvider(memory_path)
+        file_memory.put("persisted", "persistent framework memory", {"source": "file"})
+        reloaded = FileMemoryProvider(memory_path)
+        assert reloaded.search("persistent")[0].metadata["source"] == "file"
+        print("  ✅ 场景 3: FileMemoryProvider 可持久化并重新加载")
+
+        default_runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".default-memory")),
+        )
+        default_runtime.memory_provider.put("default", "default runtime memory")
+        assert os.path.exists(os.path.join(tmpdir, ".default-memory", "memory", "memory.json"))
+        assert default_runtime.memory_provider.search("runtime")[0].key == "default"
+        print("  ✅ 场景 4: Runtime 默认提供项目级持久 memory provider")
+
+        vector_path = os.path.join(tmpdir, "vector-memory.json")
+        vector_memory = VectorMemoryProvider(
+            vector_path,
+            embedding_provider=HashEmbeddingProvider(dimensions=64),
+        )
+        vector_memory.put(
+            "agent-runtime",
+            "agent runtime checkpoint trace memory",
+            {"kind": "architecture"},
+        )
+        vector_memory.put(
+            "recipe",
+            "recipe salt oil dinner",
+            {"kind": "irrelevant"},
+        )
+        scored = vector_memory.search_with_scores("runtime checkpoint trace", top_k=2)
+        assert scored[0][0].key == "agent-runtime"
+        assert scored[0][1] > 0
+        print("  ✅ 场景 5: VectorMemoryProvider 支持向量相似度检索")
+
+        reloaded_vector_memory = VectorMemoryProvider(
+            vector_path,
+            embedding_provider=HashEmbeddingProvider(dimensions=64),
+        )
+        assert reloaded_vector_memory.search("runtime checkpoint", top_k=1)[0].key == "agent-runtime"
+        print("  ✅ 场景 6: VectorMemoryProvider 可持久化并重新加载")
+
+        vector_runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".vector-runtime"),
+                memory_backend="vector",
+            ),
+        )
+        vector_runtime.memory_provider.put("runtime-vector", "runtime vector backend memory")
+        assert os.path.exists(os.path.join(tmpdir, ".vector-runtime", "memory", "vector-memory.json"))
+        assert vector_runtime.memory_provider.search("vector backend", top_k=1)[0].key == "runtime-vector"
+        print("  ✅ 场景 7: Runtime 可通过 memory_backend=vector 启用向量记忆")
+
+        sqlite_path = os.path.join(tmpdir, "sqlite-vector-memory.sqlite")
+        sqlite_memory = SqliteVectorMemoryProvider(
+            sqlite_path,
+            embedding_provider=HashEmbeddingProvider(dimensions=64),
+        )
+        sqlite_memory.put(
+            "sqlite-agent-runtime",
+            "sqlite vector memory stores agent runtime checkpoints and traces",
+            {"kind": "architecture"},
+        )
+        sqlite_memory.put(
+            "sqlite-recipe",
+            "sqlite dinner recipe salt oil",
+            {"kind": "irrelevant"},
+        )
+        sqlite_hits = sqlite_memory.search_with_scores("runtime checkpoint trace", top_k=1)
+        assert sqlite_hits[0][0].key == "sqlite-agent-runtime"
+        sqlite_memory.close()
+        reloaded_sqlite_memory = SqliteVectorMemoryProvider(
+            sqlite_path,
+            embedding_provider=HashEmbeddingProvider(dimensions=64),
+        )
+        assert reloaded_sqlite_memory.search("runtime checkpoint", top_k=1)[0].key == "sqlite-agent-runtime"
+        reloaded_sqlite_memory.close()
+        print("  ✅ 场景 8: SqliteVectorMemoryProvider 支持持久化向量检索")
+
+        sqlite_runtime = Runtime.from_config(
+            RuntimeConfig(
+                workspace_root=tmpdir,
+                state_dir=os.path.join(tmpdir, ".sqlite-runtime"),
+                memory_backend="sqlite-vector",
+            ),
+        )
+        sqlite_runtime.memory_provider.put("runtime-sqlite", "runtime sqlite vector backend memory")
+        assert os.path.exists(os.path.join(tmpdir, ".sqlite-runtime", "memory", "vector-memory.sqlite"))
+        assert sqlite_runtime.memory_provider.search("sqlite vector", top_k=1)[0].key == "runtime-sqlite"
+        sqlite_runtime.close()
+        print("  ✅ 场景 9: Runtime 可通过 memory_backend=sqlite-vector 启用 SQLite 向量记忆")
+
+    print("  🎉 Provider API 9 个场景全部通过！")
 
 
 def test_circuit_breaker():
@@ -707,12 +1414,20 @@ if __name__ == "__main__":
         ("电路断路器", test_circuit_breaker),
         ("Memory Blocks", test_memory_blocks),
         ("全链路集成", test_integration),
+        ("公开 Runtime API", test_public_runtime_api),
+        ("Standard Tool Adapters", test_standard_tool_adapters),
+        ("Runtime TOML 配置", test_runtime_config_file),
+        ("智能体增强 API", test_agent_enhancement_api),
+        ("Benchmark API", test_benchmark_api),
+        ("Enhancement Hooks", test_enhancement_hooks),
+        ("Policy Hook", test_policy_hook),
+        ("Provider API", test_provider_api),
     ]
 
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 6, 7, 14, 5, 6, 10, 10, 3]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 4, 7, 6, 2, 2, 2, 3, 9]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

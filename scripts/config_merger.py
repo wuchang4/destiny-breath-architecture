@@ -26,6 +26,7 @@
 import json
 import os
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -46,7 +47,7 @@ def deep_merge(base: dict, override: dict) -> dict:
     Returns:
         合并后的配置字典
     """
-    merged = base.copy()
+    merged = deepcopy(base)
     for key, value in override.items():
         if (
             key in merged
@@ -55,7 +56,7 @@ def deep_merge(base: dict, override: dict) -> dict:
         ):
             merged[key] = deep_merge(merged[key], value)
         else:
-            merged[key] = value
+            merged[key] = deepcopy(value)
     return merged
 
 
@@ -64,7 +65,9 @@ def _safe_json_load(file_path: str) -> Dict[str, Any]:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, PermissionError) as e:
         print(f"[ConfigMerger] 跳过 {file_path}: {e}", file=sys.stderr)
         return {}
 
@@ -144,6 +147,7 @@ class ConfigMerger:
         project_root: Optional[str] = None,
         session_config_path: Optional[str] = None,
         runtime_args: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
     ):
         """
         初始化合并器。
@@ -158,6 +162,7 @@ class ConfigMerger:
             self.project_root, ".workbuddy", "session-config.json"
         )
         self.runtime_args = runtime_args or {}
+        self.verbose = verbose
 
         # 配置文件路径
         self.project_config_path = os.path.join(
@@ -178,32 +183,36 @@ class ConfigMerger:
             合并后的完整配置字典
         """
         # L1: 默认配置（最低优先级）
-        config = self.DEFAULTS.copy()
+        config = deepcopy(self.DEFAULTS)
 
         # L2: 项目配置
         project_config = _safe_json_load(self.project_config_path)
         if project_config:
             config = deep_merge(config, project_config)
-            print(f"[ConfigMerger] L2 项目配置已合并: {self.project_config_path}", file=sys.stderr)
+            self._log(f"L2 项目配置已合并: {self.project_config_path}")
 
         # L3: 用户偏好（从 MEMORY.md 提取）
         memory_prefs = _extract_memory_preferences(self.memory_path)
         if memory_prefs:
             config = deep_merge(config, memory_prefs)
-            print(f"[ConfigMerger] L3 用户偏好已合并: {self.memory_path}", file=sys.stderr)
+            self._log(f"L3 用户偏好已合并: {self.memory_path}")
 
         # L4: 会话配置
         session_config = _safe_json_load(self.session_config_path)
         if session_config:
             config = deep_merge(config, session_config)
-            print(f"[ConfigMerger] L4 会话配置已合并: {self.session_config_path}", file=sys.stderr)
+            self._log(f"L4 会话配置已合并: {self.session_config_path}")
 
         # L5: 运行时参数（最高优先级）
         if self.runtime_args:
             config = deep_merge(config, self.runtime_args)
-            print(f"[ConfigMerger] L5 运行时参数已合并", file=sys.stderr)
+            self._log("L5 运行时参数已合并")
 
         return config
+
+    def _log(self, message: str):
+        if self.verbose:
+            print(f"[ConfigMerger] {message}", file=sys.stderr)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -236,7 +245,7 @@ class ConfigMerger:
             每层的配置字典
         """
         return {
-            "L1_defaults": self.DEFAULTS.copy(),
+            "L1_defaults": deepcopy(self.DEFAULTS),
             "L2_project": _safe_json_load(self.project_config_path),
             "L3_memory_prefs": _extract_memory_preferences(self.memory_path),
             "L4_session": _safe_json_load(self.session_config_path),
@@ -255,6 +264,7 @@ if __name__ == "__main__":
     parser.add_argument("--project-root", type=str, help="项目根目录")
     parser.add_argument("--session-config", type=str, help="session-config.json 路径")
     parser.add_argument("--set", nargs=2, metavar=("KEY", "VALUE"), help="设置运行时覆盖")
+    parser.add_argument("--verbose", action="store_true", help="输出配置层加载日志")
 
     args = parser.parse_args()
 
@@ -270,6 +280,7 @@ if __name__ == "__main__":
         project_root=args.project_root,
         session_config_path=args.session_config,
         runtime_args=runtime,
+        verbose=args.verbose,
     )
 
     if args.merge:

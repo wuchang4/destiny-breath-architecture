@@ -1,20 +1,28 @@
 # Known Issues
 
-> Transparency is the highest architectural principle.
+This file tracks known engineering gaps after the industrial-baseline upgrade.
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 1 | **Self-reference paradox**: I am my own judge — no external metric system | 🔴 High | Needs design |
-| 2 | **Cache hit path untested**: 门下省 can skip execution and go directly to AAR, but no cache entries exist yet | 🟡 Medium | Awaiting data |
-| 3 | **Double Agent registration**: Old `register` + new `AgentRuntime` coexist, needs cleanup | 🟡 Medium | Needs refactor |
-| 4 | **Memory distillation manual**: Scripts ready, cron not configured | 🟡 Medium | Scripts ready |
-| 5 | **Engine 4 baseline insufficient**: n<5, trend not computable | 🟡 Medium | Accumulating |
-| 6 | **REVIEW.md inactive**: Deep memory file not updated | 🟡 Medium | Low frequency |
-| 7 | **Tool result cache not implemented** | 🟡 Medium | Planned |
-| 8 | **WeChat control limited**: Qt framework no UIA tree + missing multimodal vision | 🟡 Medium | Awaiting model upgrade |
+| 1 | External quality evaluation is missing; output quality is not judged by an independent evaluator. | High | Needs design |
+| 2 | The public `Runtime` has built-in adapters, but ecosystem bridges for OpenAI/Codex/LangChain/AutoGen/MCP-style runtimes are not shipped yet. | High | Needs ecosystem bridges |
+| 3 | Vector memory backends are available, but production semantic quality still depends on real embedding providers and external vector database adapters. | Medium | Needs embedding/external vector adapters |
+| 4 | Auxiliary scripts such as heartbeat/checkpoint helpers still use user-local `~/.clawdbot` paths. | Medium | Needs shared path provider |
+| 5 | Tests are centralized in `tests/test_all.py`, which is useful for smoke coverage but coarse for long-term maintenance. | Medium | Needs pytest module split |
+| 6 | Skill indexing depends on operator-local `~/.workbuddy/skills`; the repository does not ship a 130-skill library. | Medium | Needs packaged sample registry |
+| 7 | The graph has v3 parallel execution, but thread-level tracing still shares one trace context. | Medium | Needs thread-local trace context or span links |
 
-## Architecture-Level Limitations
+## Recently Fixed
 
-- **State Graph is mental simulation, not an independent engine**: Node functions and conditional edges run in the agent's reasoning process, not in a separate runtime
-- **Metrics are self-assessed**: Scores are evaluated internally during AAR, not by an external validator
-- **Auto-gradient triggers, fixes still need human review**: Heartbeat can detect degradation and generate gradient files, but root cause analysis and rule changes require human confirmation
+- Tool result cache is implemented and covered by deterministic tests.
+- Model availability no longer returns `True` after failed fallback checks.
+- `ProvinceGraph` v3 high-risk parallel paths now route to `阻断/预警` instead of bypassing interruption.
+- Direct Windows test runs reconfigure stdout/stderr to UTF-8 with replacement errors.
+- The project now includes `pyproject.toml`, a console script entry point, and GitHub Actions CI.
+- `DestinyEngine` and public `Runtime` now support configurable state directories for traces, checkpoints, cache, audit logs, and run result files.
+- `Runtime` now defaults to durable project-local file memory via `FileMemoryProvider`.
+- Public `Runtime` now ships standard file, shell, and HTTP GET tool adapters with workspace/private-host safeguards.
+- `standard_tools()` provides a conservative built-in adapter bundle, and `RuntimeConfig.permission_mode` is propagated into the graph safety layer.
+- `VectorMemoryProvider`, `HashEmbeddingProvider`, and `RuntimeConfig.memory_backend = "vector"` now provide a dependency-free vector memory path.
+- `SqliteVectorMemoryProvider` and `RuntimeConfig.memory_backend = "sqlite-vector"` now provide a dependency-free SQLite vector memory backend.
+- Runtime now exposes `list_tools()`, `get_tool()`, and `tool_manifest()` for external agent/tool-calling integration.

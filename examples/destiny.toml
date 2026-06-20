@@ -1,0 +1,7 @@
+[runtime]
+workspace_root = "."
+state_dir = ".destiny-example"
+permission_mode = "workspace-write"
+audit_log = true
+persist_runs = true
+default_risk_level = "low"

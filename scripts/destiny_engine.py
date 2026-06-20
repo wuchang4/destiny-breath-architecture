@@ -37,6 +37,31 @@ from execution_tracer import ExecutionTracer
 from tool_result_cache import ToolResultCache
 
 
+def parse_tool_args(raw_args: str, arg_pairs: list[str] | None = None) -> dict:
+    """Parse the CLI --args JSON payload with a clear operator-facing error."""
+    try:
+        parsed = json.loads(raw_args or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "--args must be a JSON object, for example: "
+            "'{\"query\":\"AI news\"}'"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("--args must decode to a JSON object")
+    for pair in arg_pairs or []:
+        if "=" not in pair:
+            raise ValueError("--arg values must use KEY=VALUE format")
+        key, value = pair.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError("--arg keys cannot be empty")
+        try:
+            parsed[key] = json.loads(value)
+        except json.JSONDecodeError:
+            parsed[key] = value
+    return parsed
+
+
 class DestinyEngine:
     """
     天命统一执行引擎。
@@ -45,13 +70,25 @@ class DestinyEngine:
     串联成一条自动执行链路。
     """
 
-    def __init__(self, workspace_root: str = "."):
+    def __init__(
+        self,
+        workspace_root: str = ".",
+        state_dir: str | None = None,
+        runtime_args: dict | None = None,
+    ):
         self.workspace_root = os.path.abspath(workspace_root)
+        self.state_dir = os.path.abspath(state_dir or os.path.join(self.workspace_root, ".destiny"))
+        self.trace_dir = os.path.join(self.state_dir, "traces")
+        self.checkpoint_dir = os.path.join(self.state_dir, "checkpoints")
+        self.cache_dir = os.path.join(self.state_dir, "cache")
         self.tracer = ExecutionTracer()
-        self.config = ConfigMerger(project_root=self.workspace_root)
+        self.config = ConfigMerger(
+            project_root=self.workspace_root,
+            runtime_args=runtime_args or {},
+        )
         self.router = ModelRouter()
-        self.cache = ToolResultCache()
-        self.graph = ProvinceGraph()
+        self.cache = ToolResultCache(cache_dir=self.cache_dir)
+        self.graph = ProvinceGraph(checkpoint_dir=self.checkpoint_dir)
         self.chain = None  # 延迟初始化，需要知道权限模式
 
     def run(self, task: str, risk_level: str = "low",
@@ -86,7 +123,7 @@ class DestinyEngine:
 
         # 导出追踪
         trace_path = os.path.join(
-            os.path.expanduser("~/.clawdbot"), "traces",
+            self.trace_dir,
             f"trace_{int(time.time())}.json"
         )
         os.makedirs(os.path.dirname(trace_path), exist_ok=True)
@@ -190,9 +227,8 @@ class DestinyEngine:
 
             with self.tracer.span("AAR-检查点") as s:
                 checkpoint = self.graph.serialize()
-                checkpoint_dir = os.path.join(os.path.expanduser("~/.clawdbot"), "checkpoints")
-                os.makedirs(checkpoint_dir, exist_ok=True)
-                checkpoint_path = os.path.join(checkpoint_dir, "destiny_engine.json")
+                os.makedirs(self.checkpoint_dir, exist_ok=True)
+                checkpoint_path = os.path.join(self.checkpoint_dir, "destiny_engine.json")
                 tmp_path = checkpoint_path + ".tmp"
                 try:
                     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -214,10 +250,11 @@ class DestinyEngine:
     def resume(self, checkpoint_path: str = None) -> dict:
         """从检查点恢复执行。"""
         cpath = checkpoint_path or os.path.join(
-            os.path.expanduser("~/.clawdbot"), "checkpoints", "destiny_engine.json"
+            self.checkpoint_dir, "destiny_engine.json"
         )
         graph = ProvinceGraph.load_checkpoint(os.path.dirname(cpath))
         if graph:
+            graph.checkpoint_dir = self.checkpoint_dir
             self.graph = graph
             self.graph.run()
             return {
@@ -242,25 +279,40 @@ class DestinyEngine:
         return "default"
 
 
-# ── CLI 入口 ───────────────────────────────────────────────
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """Console entry point."""
     parser = argparse.ArgumentParser(description="天命统一执行引擎")
-    parser.add_argument("--task", type=str, required=True, help="任务描述")
+    parser.add_argument("--task", type=str, help="任务描述")
     parser.add_argument("--risk", type=str, default="low",
                         choices=["low", "medium", "high"], help="风险等级")
     parser.add_argument("--tool", type=str, default="", help="要调用的工具名")
     parser.add_argument("--args", type=str, default="{}", help="工具参数（JSON）")
+    parser.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE",
+                        help="追加单个工具参数；比内联 JSON 更适合 PowerShell")
+    parser.add_argument("--state-dir", type=str, help="运行状态目录（默认: <workspace>/.destiny）")
+    parser.add_argument("--permission", type=str,
+                        choices=["read-only", "workspace-write", "full-access"],
+                        help="覆盖工具权限模式")
     parser.add_argument("--resume", type=str, help="从检查点恢复")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    engine = DestinyEngine()
+    if not args.resume and not args.task:
+        parser.error("--task is required unless --resume is provided")
+
+    runtime_args = {}
+    if args.permission:
+        runtime_args["default_permission_mode"] = args.permission
+    engine = DestinyEngine(state_dir=args.state_dir, runtime_args=runtime_args)
 
     if args.resume:
         result = engine.resume(args.resume)
     else:
-        tool_args = json.loads(args.args)
+        try:
+            tool_args = parse_tool_args(args.args, args.arg)
+        except ValueError as exc:
+            parser.error(str(exc))
         result = engine.run(
             task=args.task,
             risk_level=args.risk,
@@ -283,3 +335,9 @@ if __name__ == "__main__":
         if result.get("trace_summary"):
             print(f"\n{result['trace_summary']}")
         print(f"{'='*50}")
+    return 0
+
+
+# ── CLI 入口 ───────────────────────────────────────────────
+if __name__ == "__main__":
+    raise SystemExit(main())

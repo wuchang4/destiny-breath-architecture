@@ -188,7 +188,7 @@ class ModelRouter:
             if HAS_CIRCUIT_BREAKER:
                 breaker.record_failure()
 
-        # 最后降级：简单 HEAD 检查
+        # 最后降级：简单 HEAD 检查。失败必须返回 False，避免把不可用模型误判为可用。
         try:
             base_url = url.split("/v1")[0] if "/v1" in url else url
             req = urllib.request.Request(base_url, method="HEAD")
@@ -199,7 +199,7 @@ class ModelRouter:
         except (urllib.error.URLError, OSError):
             if HAS_CIRCUIT_BREAKER:
                 breaker.record_failure()
-            return True
+            return False
 
     def select_with_fallback(
         self, 

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "destiny-breath-architecture"
+version = "0.4.0"
+description = "A deterministic agent runtime prototype with graph execution, safety checks, routing, caching, memory blocks, and tracing."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "wuchang4" }
+]
+keywords = ["agent", "runtime", "state-machine", "safety", "observability"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+destiny-engine = "scripts.destiny_engine:main"
+
+[tool.setuptools]
+packages = ["destiny", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "scripts"]
+addopts = "-q"
