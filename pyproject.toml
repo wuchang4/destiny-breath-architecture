@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "destiny-breath-architecture"
-version = "0.4.0"
-description = "A deterministic agent runtime prototype with graph execution, safety checks, routing, caching, memory blocks, and tracing."
+version = "0.5.0"
+description = "A production-oriented agent enhancement runtime with graph execution, tool safety, memory providers, tracing, evaluation, hooks, and tool adapters."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
   { name = "wuchang4" }
@@ -18,9 +18,9 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 dependencies = []
 

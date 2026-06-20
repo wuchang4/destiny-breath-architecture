@@ -19,6 +19,7 @@ from .providers import (
 from .runtime import Runtime, RuntimeConfig
 from .tools import FunctionTool, RegisteredTool, ToolAdapter, ToolResult, tool_manifest, tool_spec
 from .types import RunResult, RunStatus
+from .version import __version__
 
 __all__ = [
     "FunctionTool",
@@ -58,4 +59,5 @@ __all__ = [
     "ToolResult",
     "tool_manifest",
     "tool_spec",
+    "__version__",
 ]

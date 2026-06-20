@@ -1,5 +1,7 @@
 # Destiny Breath Architecture
 
+Current framework version: `0.5.0`
+
 Production-oriented framework for enhancing existing AI agents with graph execution,
 tool safety, persistent memory, tracing, evaluation, lifecycle hooks, and standard
 tool adapters.
@@ -38,9 +40,12 @@ agent without forcing the agent itself to be rewritten.
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 107 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 108 covered scenarios. |
+| Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
+
+Requires Python 3.11+.
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -55,6 +60,12 @@ Run the deterministic test suite:
 
 ```bash
 python tests/test_all.py
+```
+
+Run the complete agent task example:
+
+```bash
+python examples/complete_agent_task.py
 ```
 
 Run a minimal runtime:
@@ -124,6 +135,34 @@ runtime = Runtime.from_config(
 enhanced_agent = runtime.enhance(MyAgent())
 outcome = enhanced_agent.run("improve this task")
 print(outcome.answer)
+```
+
+## Complete Real Case
+
+The repository includes a complete deterministic agent task:
+
+```bash
+python examples/complete_agent_task.py
+```
+
+The example does the following:
+
+1. Creates a temporary repository workspace.
+2. Copies this repository's `README.md` into the workspace.
+3. Wraps a `RepositoryAuditAgent` with `Runtime`.
+4. Runs a `ProjectAudit` tool through Destiny's safety/runtime layer.
+5. Writes `reports/agent-readiness.md`.
+6. Persists an agent-readiness memory entry with SQLite vector memory.
+7. Runs a `Benchmark` case to verify the task completed correctly.
+
+Expected output:
+
+```text
+status=succeeded
+score=1.00
+report_exists=True
+memory_hit=agent-readiness-report
+1/1 passed (100.0%); tool_success=100.0%; interrupted=0; errors=0
 ```
 
 ## Standard Tool Adapters
@@ -367,7 +406,9 @@ route to interruption and require explicit confirmation/resume.
 | `scripts/execution_tracer.py` | Tracing, metrics, and export helpers. |
 | `scripts/memory_blocks.py` | Core and archival memory block prototype. |
 | `examples/` | Runnable integration examples. |
+| `examples/complete_agent_task.py` | Complete repository-audit agent task. |
 | `tests/test_all.py` | Deterministic smoke/integration coverage. |
+| `docs/ci-cd.md` | GitHub Actions CI/CD workflow template and token-scope note. |
 
 ## Production Baseline
 
@@ -385,13 +426,15 @@ The repository now provides:
 - Evaluation helpers.
 - Audit logs and run result persistence.
 - Configurable state directory.
-- Deterministic test suite covering 107 scenarios.
+- Deterministic test suite covering 108 scenarios.
+- Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits
 
 This is still a production-oriented framework baseline, not a finished ecosystem.
 Important remaining work:
 
+- Enable GitHub Actions CI once a token with `workflow` scope is available.
 - Add first-class OpenAI/local embedding provider adapters.
 - Add external vector database adapters such as pgvector or Qdrant.
 - Add bridge packages for Open Claw, MCP, LangChain, AutoGen, and Codex-style runtimes.

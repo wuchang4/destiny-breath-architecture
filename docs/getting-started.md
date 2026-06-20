@@ -4,7 +4,7 @@
 
 - An AI agent framework that supports custom system prompts / identity files
 - DeepSeek V4 Flash or equivalent LLM
-- Python 3.10+ (for scripts and utilities)
+- Python 3.11+ (for scripts and utilities)
 - (Optional) Ollama with nomic-embed-text for vector memory
 
 ## Step 1: Embed the Architecture

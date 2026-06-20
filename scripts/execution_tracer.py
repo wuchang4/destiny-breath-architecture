@@ -43,6 +43,11 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from destiny.version import __version__ as DESTINY_VERSION
+except Exception:
+    DESTINY_VERSION = "0.5.0"
+
 
 # ── Span（兼容 v1 + OTEL 扩展）────────────────────────────
 
@@ -324,12 +329,12 @@ class ExecutionTracer:
                 "resource": {
                     "attributes": [
                         {"key": "service.name", "value": {"stringValue": self.service_name}},
-                        {"key": "service.version", "value": {"stringValue": "v3.0"}},
+                        {"key": "service.version", "value": {"stringValue": DESTINY_VERSION}},
                         {"key": "task.id", "value": {"stringValue": self.task_id}},
                     ]
                 },
                 "scopeSpans": [{
-                    "scope": {"name": "destiny-engine", "version": "3.0.0"},
+                    "scope": {"name": "destiny-engine", "version": DESTINY_VERSION},
                     "spans": [s.to_otel() for s in self.spans],
                 }],
             }],
@@ -340,7 +345,7 @@ class ExecutionTracer:
                     ]
                 },
                 "scopeMetrics": [{
-                    "scope": {"name": "destiny-engine-metrics", "version": "3.0.0"},
+                    "scope": {"name": "destiny-engine-metrics", "version": DESTINY_VERSION},
                     "metrics": [m.to_otel() for m in self.metrics.values()],
                 }],
             }],

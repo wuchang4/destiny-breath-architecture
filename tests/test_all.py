@@ -524,7 +524,9 @@ def test_integration():
 
 def test_public_runtime_api():
     """测试公开 Runtime API（生产级嵌入入口）。"""
-    from destiny import FunctionTool, Runtime, RuntimeConfig, RunStatus
+    import tomllib
+    from destiny import FunctionTool, HttpGetTool, Runtime, RuntimeConfig, RunStatus, __version__
+    from scripts.execution_tracer import DESTINY_VERSION
 
     print("\n=== 测试公开 Runtime API ===")
 
@@ -606,7 +608,14 @@ def test_public_runtime_api():
             assert "format" in str(e)
         print("  ✅ 场景 4: Runtime 可导出稳定工具注册表和 manifest")
 
-    print("  🎉 公开 Runtime API 4 个场景全部通过！")
+        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
+            project = tomllib.load(f)
+        assert project["project"]["version"] == __version__
+        assert DESTINY_VERSION == __version__
+        assert HttpGetTool().user_agent.endswith(f"/{__version__}")
+        print("  ✅ 场景 5: 包版本、trace version 与工具 User-Agent 保持一致")
+
+    print("  🎉 公开 Runtime API 5 个场景全部通过！")
 
 
 def test_standard_tool_adapters():
@@ -1427,7 +1436,7 @@ if __name__ == "__main__":
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 4, 7, 6, 2, 2, 2, 3, 9]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

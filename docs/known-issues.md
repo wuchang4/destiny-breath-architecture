@@ -18,7 +18,7 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - Model availability no longer returns `True` after failed fallback checks.
 - `ProvinceGraph` v3 high-risk parallel paths now route to `阻断/预警` instead of bypassing interruption.
 - Direct Windows test runs reconfigure stdout/stderr to UTF-8 with replacement errors.
-- The project now includes `pyproject.toml`, a console script entry point, and GitHub Actions CI.
+- The project now includes `pyproject.toml`, a console script entry point, and a documented GitHub Actions CI template. Enabling the workflow requires a GitHub token with `workflow` scope.
 - `DestinyEngine` and public `Runtime` now support configurable state directories for traces, checkpoints, cache, audit logs, and run result files.
 - `Runtime` now defaults to durable project-local file memory via `FileMemoryProvider`.
 - Public `Runtime` now ships standard file, shell, and HTTP GET tool adapters with workspace/private-host safeguards.
@@ -26,3 +26,5 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - `VectorMemoryProvider`, `HashEmbeddingProvider`, and `RuntimeConfig.memory_backend = "vector"` now provide a dependency-free vector memory path.
 - `SqliteVectorMemoryProvider` and `RuntimeConfig.memory_backend = "sqlite-vector"` now provide a dependency-free SQLite vector memory backend.
 - Runtime now exposes `list_tools()`, `get_tool()`, and `tool_manifest()` for external agent/tool-calling integration.
+- Package/runtime/tracing/User-Agent version metadata is unified around `0.5.0`.
+- `examples/complete_agent_task.py` now demonstrates a complete repository-audit agent task with artifact writing, SQLite vector memory, and benchmark verification.

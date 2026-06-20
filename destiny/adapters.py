@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .tools import ToolResult
+from .version import USER_AGENT
 
 
 def _workspace_root(context: dict[str, Any]) -> Path:
@@ -220,7 +221,7 @@ class HttpGetTool:
     timeout: int = 10
     max_bytes: int = 1_000_000
     allow_private_hosts: bool = False
-    user_agent: str = "destiny-runtime/0.4"
+    user_agent: str = USER_AGENT
     schema: dict[str, Any] = field(default_factory=lambda: {
         "type": "object",
         "required": ["url"],
