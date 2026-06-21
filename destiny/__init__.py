@@ -4,7 +4,7 @@ from .adapters import FileReadTool, FileWriteTool, HttpGetTool, ShellCommandTool
 from .agents import AgentAdapter, AgentOutcome, AgentPlan, EnhancedAgent
 from .evals import Benchmark, EvalCase, EvalCaseResult, EvalReport
 from .hooks import EnhancementHook, HookAbort, PolicyHook, RecordingHook
-from .mcp import McpToolBridge, mcp_tool_manifest
+from .mcp import McpStdioTransport, McpToolBridge, mcp_tool_manifest
 from .openclaw import OpenClawBridge, OpenClawRequest, OpenClawResponse, openclaw_skill_manifest
 from .providers import (
     FileMemoryProvider,
@@ -51,6 +51,7 @@ __all__ = [
     "PolicyHook",
     "RecordingHook",
     "McpToolBridge",
+    "McpStdioTransport",
     "mcp_tool_manifest",
     "OpenClawBridge",
     "OpenClawRequest",

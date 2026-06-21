@@ -29,6 +29,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 destiny-engine = "scripts.destiny_engine:main"
+destiny-mcp-stdio = "scripts.mcp_stdio:main"
 
 [tool.setuptools]
 packages = ["destiny", "scripts"]

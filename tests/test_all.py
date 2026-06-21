@@ -1461,7 +1461,8 @@ def test_quality_evaluator_api():
 
 def test_mcp_bridge_api():
     """Test MCP-style JSON-RPC tool bridge."""
-    from destiny import FunctionTool, McpToolBridge, Runtime, RuntimeConfig, mcp_tool_manifest
+    import io
+    from destiny import FunctionTool, McpStdioTransport, McpToolBridge, Runtime, RuntimeConfig, mcp_tool_manifest
 
     print("\n=== Testing MCP Bridge API ===")
 
@@ -1534,10 +1535,47 @@ def test_mcp_bridge_api():
         assert unknown_tool["error"]["code"] == -32602
         notification = bridge.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
         assert notification is None
-        runtime.close()
         print("  OK scenario 5: bridge handles protocol errors and notifications")
 
-    print("  MCP Bridge API 5 scenarios passed!")
+        transport = McpStdioTransport(bridge, input_stream=io.StringIO(), output_stream=io.StringIO())
+        parse_error = transport.handle_line("{not-json}\n")
+        assert parse_error["error"]["code"] == -32700
+        invalid_request = transport.handle_line("[]\n")
+        assert invalid_request["error"]["code"] == -32600
+        print("  OK scenario 6: stdio transport reports parse and invalid-request errors")
+
+        input_stream = io.StringIO(
+            "\n".join([
+                json.dumps({"jsonrpc": "2.0", "id": 8, "method": "initialize"}),
+                json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {"name": "Echo", "arguments": {"message": "stdio"}},
+                }),
+                "",
+            ])
+        )
+        output_stream = io.StringIO()
+        streamed = McpStdioTransport(bridge, input_stream=input_stream, output_stream=output_stream)
+        assert streamed.serve() == 3
+        lines = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+        assert [line["id"] for line in lines] == [8, 9]
+        assert lines[1]["result"]["structuredContent"]["echo"] == "stdio"
+        print("  OK scenario 7: stdio transport processes JSON Lines requests")
+
+        from scripts.mcp_stdio import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["--workspace", tmpdir, "--enable-shell", "--server-name", "demo"])
+        assert args.workspace == tmpdir
+        assert args.enable_shell is True
+        assert args.enable_http is False
+        assert args.server_name == "demo"
+        runtime.close()
+        print("  OK scenario 8: stdio CLI parser keeps shell/http opt-in")
+
+    print("  MCP Bridge API 8 scenarios passed!")
 
 
 def test_openclaw_bridge_api():
@@ -1855,7 +1893,7 @@ if __name__ == "__main__":
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 5, 5]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 8, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

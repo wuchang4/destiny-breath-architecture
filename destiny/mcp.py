@@ -9,9 +9,10 @@ transport server inside this package.
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, TextIO
 
 from .version import __version__
 
@@ -153,6 +154,49 @@ class McpToolBridge:
         return response
 
 
+class McpStdioTransport:
+    """Line-delimited stdio transport for an MCP-style bridge."""
+
+    def __init__(
+        self,
+        bridge: McpToolBridge,
+        *,
+        input_stream: TextIO | None = None,
+        output_stream: TextIO | None = None,
+    ):
+        self.bridge = bridge
+        self.input_stream = input_stream or sys.stdin
+        self.output_stream = output_stream or sys.stdout
+
+    def handle_line(self, line: str) -> dict[str, Any] | None:
+        stripped = line.strip()
+        if not stripped:
+            return None
+        try:
+            message = json.loads(stripped)
+        except json.JSONDecodeError:
+            return _jsonrpc_error(None, -32700, "Parse error")
+        if not isinstance(message, Mapping):
+            return _jsonrpc_error(None, -32600, "Invalid Request")
+        return self.bridge.handle(message)
+
+    def serve(self, *, max_messages: int | None = None) -> int:
+        """Process JSON-RPC messages until EOF or `max_messages` is reached."""
+        handled = 0
+        for line in self.input_stream:
+            if max_messages is not None and handled >= max_messages:
+                break
+            response = self.handle_line(line)
+            handled += 1
+            if response is not None:
+                self.write_response(response)
+        return handled
+
+    def write_response(self, response: Mapping[str, Any]) -> None:
+        self.output_stream.write(json.dumps(response, ensure_ascii=False, sort_keys=True) + "\n")
+        self.output_stream.flush()
+
+
 def mcp_tool_manifest(runtime: Any, *, cache_ttl_ms: int = 300_000) -> dict[str, Any]:
     """Return an MCP-shaped tools/list result for a Runtime."""
     return McpToolBridge(runtime, cache_ttl_ms=cache_ttl_ms).list_tools()
@@ -170,6 +214,19 @@ def _tool_error(message: str, metadata: dict[str, Any] | None = None) -> dict[st
         },
         "isError": True,
     }
+
+
+def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
+    response: dict[str, Any] = {
+        "jsonrpc": JSONRPC_VERSION,
+        "error": {
+            "code": code,
+            "message": message,
+        },
+    }
+    if request_id is not None:
+        response["id"] = request_id
+    return response
 
 
 def _structured_content(data: Any) -> dict[str, Any]:
