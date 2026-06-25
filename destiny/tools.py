@@ -39,6 +39,8 @@ class RegisteredTool:
     schema: dict[str, Any] = field(default_factory=dict)
     required: tuple[str, ...] = ()
     description: str = ""
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def validate(self, args: dict[str, Any]) -> None:
         missing = [key for key in self.required if key not in args]
@@ -70,11 +72,18 @@ def tool_spec(tool: ToolAdapter) -> dict[str, Any]:
         }
     elif required and "required" not in schema:
         schema["required"] = required
-    return {
+    spec = {
         "name": tool.name,
         "description": getattr(tool, "description", "") or "",
         "schema": schema,
     }
+    output_schema = dict(getattr(tool, "output_schema", {}) or {})
+    metadata = dict(getattr(tool, "metadata", {}) or {})
+    if output_schema:
+        spec["output_schema"] = output_schema
+    if metadata:
+        spec["metadata"] = metadata
+    return spec
 
 
 def tool_manifest(tools: list[ToolAdapter], *, format: str = "destiny") -> list[dict[str, Any]]:

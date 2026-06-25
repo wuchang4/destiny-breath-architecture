@@ -82,12 +82,19 @@ class McpToolBridge:
     def list_tools(self) -> dict[str, Any]:
         tools = []
         for spec in self.runtime.tool_manifest(format="destiny"):
-            tools.append({
+            tool = {
                 "name": spec["name"],
                 "title": spec["name"],
                 "description": spec.get("description", ""),
                 "inputSchema": spec.get("schema") or {"type": "object"},
-            })
+            }
+            output_schema = spec.get("output_schema")
+            if output_schema:
+                tool["outputSchema"] = output_schema
+            annotations = _mcp_annotations(spec.get("metadata") or {})
+            if annotations:
+                tool["annotations"] = annotations
+            tools.append(tool)
         return {
             "tools": tools,
             "ttlMs": self.cache_ttl_ms,
@@ -227,6 +234,21 @@ def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
     if request_id is not None:
         response["id"] = request_id
     return response
+
+
+def _mcp_annotations(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    raw_annotations = metadata.get("annotations")
+    annotations = dict(raw_annotations) if isinstance(raw_annotations, Mapping) else {}
+    field_map = {
+        "read_only": "readOnlyHint",
+        "destructive": "destructiveHint",
+        "idempotent": "idempotentHint",
+        "open_world": "openWorldHint",
+    }
+    for source, target in field_map.items():
+        if source in metadata:
+            annotations[target] = bool(metadata[source])
+    return annotations
 
 
 def _structured_content(data: Any) -> dict[str, Any]:

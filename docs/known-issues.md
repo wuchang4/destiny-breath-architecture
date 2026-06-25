@@ -26,6 +26,7 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - `VectorMemoryProvider`, `HashEmbeddingProvider`, and `RuntimeConfig.memory_backend = "vector"` now provide a dependency-free vector memory path.
 - `SqliteVectorMemoryProvider` and `RuntimeConfig.memory_backend = "sqlite-vector"` now provide a dependency-free SQLite vector memory backend.
 - Runtime now exposes `list_tools()`, `get_tool()`, and `tool_manifest()` for external agent/tool-calling integration.
+- Tool manifests now expose output schemas and safety metadata, and MCP `tools/list` maps that metadata into annotations.
 - Package/runtime/tracing/User-Agent version metadata is unified around `0.5.0`.
 - `examples/complete_agent_task.py` now demonstrates a complete repository-audit agent task with artifact writing, SQLite vector memory, and benchmark verification.
 - Runtime now includes dependency-free token budget controls for context compaction, model prompts/responses, memory search results, and tool result payloads.

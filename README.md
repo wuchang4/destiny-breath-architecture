@@ -29,22 +29,22 @@ agent without forcing the agent itself to be rewritten.
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Public runtime | Working | `destiny.Runtime`, typed `RunResult`, audit log, run store, and tool manifest export. |
+| Public runtime | Working | `destiny.Runtime`, typed `RunResult`, audit log, run store, and tool manifest export with metadata. |
 | Agent wrapper | Working | Wrap an existing agent with `runtime.enhance(agent)`. |
 | State graph | Working | `ProvinceGraph` v3 supports deterministic flow, parallel planning/verification, merge reducers, interrupt/resume, and checkpoints. |
 | Tool safety | Working | Permission modes, path traversal checks, dangerous command checks, output limits, and confirmation gates. |
 | Standard tools | Working | File read/write, shell command, and HTTP GET adapters with workspace and private-host safeguards. |
-| Tool manifest | Working | Runtime can export registered tools in native or generic function-calling format. |
+| Tool manifest | Working | Runtime can export registered tools, input schemas, output schemas, and safety metadata in native or generic function-calling format. |
 | Memory providers | Working | File keyword memory, JSON vector memory, and SQLite vector memory. |
 | Model providers | Working | Provider protocol plus deterministic static provider for tests. |
 | Token budget | Working | Dependency-free token estimates, context compaction, memory retrieval limits, model prompt/response limits, and tool result compaction. |
 | OpenClaw bridge | Working | `OpenClawBridge` routes chat-style payloads through Destiny Runtime controls. |
-| MCP bridge | Working | `McpToolBridge` and `McpStdioTransport` expose Runtime tools through MCP-style JSON-RPC. |
+| MCP bridge | Working | `McpToolBridge` and `McpStdioTransport` expose Runtime tools, output schemas, and annotations through MCP-style JSON-RPC. |
 | Hooks | Working | Lifecycle hooks for plan/run/tool/reflect stages, including `PolicyHook`. |
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | Quality gate | Working | `QualityEvaluator` and `QualityRubric` score outputs and plug into `EvalCase.judge`. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 132 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 133 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -235,12 +235,12 @@ tools = standard_tools(shell=True, http=True)
 
 Built-in adapters:
 
-| Tool | Purpose | Default safety posture |
-| --- | --- | --- |
-| `Read` | Read a workspace file. | Blocks paths outside workspace. |
-| `WriteFile` | Write a workspace file. | Blocks paths outside workspace; blocked by read-only mode. |
-| `Bash` | Run a shell command. | Opt-in; still passes through safety chain. |
-| `WebFetch` | Fetch HTTP(S) text. | Opt-in; private/local hosts blocked by default. |
+| Tool | Purpose | Default safety posture | Metadata hints |
+| --- | --- | --- | --- |
+| `Read` | Read a workspace file. | Blocks paths outside workspace. | `read_only=true`, `open_world=false` |
+| `WriteFile` | Write a workspace file. | Blocks paths outside workspace; blocked by read-only mode. | `read_only=false`, `destructive=true` |
+| `Bash` | Run a shell command. | Opt-in; still passes through safety chain. | `destructive=true`, `open_world=true` |
+| `WebFetch` | Fetch HTTP(S) text. | Opt-in; private/local hosts blocked by default. | `read_only=true`, `open_world=true` |
 
 ## Tool Manifest
 
@@ -251,6 +251,11 @@ print(runtime.list_tools())
 print(runtime.tool_manifest())
 print(runtime.tool_manifest(format="function"))
 ```
+
+The native manifest includes each tool's input schema, optional output schema,
+and safety metadata such as `read_only`, `destructive`, `idempotent`, and
+`open_world`. Built-in adapters populate these fields so hosts can render better
+approval UI and plan with fewer unsafe assumptions.
 
 The `function` format is a generic model-tool-calling shape:
 
@@ -276,7 +281,9 @@ The `function` format is a generic model-tool-calling shape:
 `McpToolBridge` exposes registered Runtime tools through an MCP-style JSON-RPC
 shape for embedders that want `initialize`, `ping`, `tools/list`, and
 `tools/call`. `McpStdioTransport` adds a line-delimited stdio loop for hosts
-that communicate over standard input/output.
+that communicate over standard input/output. MCP `tools/list` maps Destiny
+metadata into tool annotations such as `readOnlyHint`, `destructiveHint`, and
+`openWorldHint`, and includes `outputSchema` when a tool declares one.
 
 ```bash
 python examples/mcp_bridge.py
@@ -589,19 +596,19 @@ The repository now provides:
 - Console script entry point: `destiny-engine`.
 - Public embeddable API: `destiny.Runtime`.
 - Standard tool adapters with safety checks.
-- Tool discovery and manifest export.
+- Tool discovery plus manifest export with safety metadata and output schemas.
 - File, JSON vector, and SQLite vector memory backends.
 - Provider interfaces for models, memory, and embeddings.
 - Agent enhancement wrapper.
 - OpenClaw-style bridge for chat payload integration.
-- MCP-style bridge and stdio transport for tool-listing and tool-calling integration.
+- MCP-style bridge and stdio transport for tool-listing, output-schema, annotation, and tool-calling integration.
 - Policy hooks.
 - Evaluation helpers.
 - Deterministic quality evaluator and Benchmark-compatible quality gates.
 - Audit logs and run result persistence.
 - Configurable state directory.
 - Token budget controls for context, model calls, memory retrieval, and tool results.
-- Deterministic test suite covering 132 scenarios.
+- Deterministic test suite covering 133 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits

@@ -47,6 +47,13 @@ class FileReadTool:
     description: str = "Read a UTF-8 text file from inside the runtime workspace."
     max_chars: int = 20000
     allow_outside_workspace: bool = False
+    metadata: dict[str, Any] = field(default_factory=lambda: {
+        "category": "filesystem",
+        "read_only": True,
+        "destructive": False,
+        "idempotent": True,
+        "open_world": False,
+    })
     schema: dict[str, Any] = field(default_factory=lambda: {
         "type": "object",
         "required": ["path"],
@@ -54,6 +61,15 @@ class FileReadTool:
             "path": {"type": "string"},
             "encoding": {"type": "string", "default": "utf-8"},
             "max_chars": {"type": "integer"},
+        },
+    })
+    output_schema: dict[str, Any] = field(default_factory=lambda: {
+        "type": "object",
+        "required": ["path", "content", "truncated"],
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+            "truncated": {"type": "boolean"},
         },
     })
 
@@ -102,6 +118,13 @@ class FileWriteTool:
     name: str = "WriteFile"
     description: str = "Write a UTF-8 text file inside the runtime workspace."
     allow_outside_workspace: bool = False
+    metadata: dict[str, Any] = field(default_factory=lambda: {
+        "category": "filesystem",
+        "read_only": False,
+        "destructive": True,
+        "idempotent": False,
+        "open_world": False,
+    })
     schema: dict[str, Any] = field(default_factory=lambda: {
         "type": "object",
         "required": ["path", "content"],
@@ -111,6 +134,14 @@ class FileWriteTool:
             "encoding": {"type": "string", "default": "utf-8"},
             "overwrite": {"type": "boolean", "default": True},
             "create_parents": {"type": "boolean", "default": True},
+        },
+    })
+    output_schema: dict[str, Any] = field(default_factory=lambda: {
+        "type": "object",
+        "required": ["path", "bytes"],
+        "properties": {
+            "path": {"type": "string"},
+            "bytes": {"type": "integer"},
         },
     })
 
@@ -155,12 +186,29 @@ class ShellCommandTool:
     description: str = "Execute a shell command from the runtime workspace."
     timeout: int = 30
     max_output_chars: int = 20000
+    metadata: dict[str, Any] = field(default_factory=lambda: {
+        "category": "shell",
+        "read_only": False,
+        "destructive": True,
+        "idempotent": False,
+        "open_world": True,
+    })
     schema: dict[str, Any] = field(default_factory=lambda: {
         "type": "object",
         "required": ["command"],
         "properties": {
             "command": {"type": "string"},
             "timeout": {"type": "integer"},
+        },
+    })
+    output_schema: dict[str, Any] = field(default_factory=lambda: {
+        "type": "object",
+        "required": ["returncode", "stdout", "stderr", "truncated"],
+        "properties": {
+            "returncode": {"type": "integer"},
+            "stdout": {"type": "string"},
+            "stderr": {"type": "string"},
+            "truncated": {"type": "boolean"},
         },
     })
 
@@ -222,6 +270,13 @@ class HttpGetTool:
     max_bytes: int = 1_000_000
     allow_private_hosts: bool = False
     user_agent: str = USER_AGENT
+    metadata: dict[str, Any] = field(default_factory=lambda: {
+        "category": "network",
+        "read_only": True,
+        "destructive": False,
+        "idempotent": True,
+        "open_world": True,
+    })
     schema: dict[str, Any] = field(default_factory=lambda: {
         "type": "object",
         "required": ["url"],
@@ -230,6 +285,16 @@ class HttpGetTool:
             "headers": {"type": "object"},
             "timeout": {"type": "integer"},
             "max_bytes": {"type": "integer"},
+        },
+    })
+    output_schema: dict[str, Any] = field(default_factory=lambda: {
+        "type": "object",
+        "required": ["url", "status", "content", "truncated"],
+        "properties": {
+            "url": {"type": "string"},
+            "status": {"type": "integer"},
+            "content": {"type": "string"},
+            "truncated": {"type": "boolean"},
         },
     })
 

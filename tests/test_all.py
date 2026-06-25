@@ -542,6 +542,21 @@ def test_public_runtime_api():
                     required=("message",),
                     handler=echo,
                     description="Echo one message.",
+                    output_schema={
+                        "type": "object",
+                        "required": ["echo", "history"],
+                        "properties": {
+                            "echo": {"type": "string"},
+                            "history": {"type": "array"},
+                        },
+                    },
+                    metadata={
+                        "category": "test",
+                        "read_only": True,
+                        "destructive": False,
+                        "idempotent": True,
+                        "open_world": False,
+                    },
                 )
             ],
         )
@@ -598,6 +613,8 @@ def test_public_runtime_api():
         manifest = runtime.tool_manifest()
         assert manifest[0]["name"] == "Echo"
         assert manifest[0]["schema"]["required"] == ["message"]
+        assert manifest[0]["output_schema"]["required"] == ["echo", "history"]
+        assert manifest[0]["metadata"]["read_only"] is True
         function_manifest = runtime.tool_manifest(format="function")
         assert function_manifest[0]["type"] == "function"
         assert function_manifest[0]["function"]["name"] == "Echo"
@@ -738,7 +755,20 @@ def test_standard_tool_adapters():
         assert {"Read", "WriteFile", "Bash", "WebFetch"} <= expanded_tool_names
         print("  ✅ 场景 7: standard_tools 默认保守，shell/http 显式启用")
 
-    print("  🎉 标准工具 Adapter 7 个场景全部通过！")
+        adapter_runtime = Runtime.from_config(
+            RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".adapter-manifest")),
+            tools=standard_tools(shell=True, http=True),
+        )
+        adapter_manifest = {item["name"]: item for item in adapter_runtime.tool_manifest()}
+        assert adapter_manifest["Read"]["metadata"]["read_only"] is True
+        assert adapter_manifest["Read"]["output_schema"]["properties"]["content"]["type"] == "string"
+        assert adapter_manifest["WriteFile"]["metadata"]["destructive"] is True
+        assert adapter_manifest["Bash"]["metadata"]["open_world"] is True
+        assert adapter_manifest["WebFetch"]["metadata"]["category"] == "network"
+        adapter_runtime.close()
+        print("  ✅ 场景 8: 标准工具 manifest 暴露安全语义和输出 schema")
+
+    print("  🎉 标准工具 Adapter 8 个场景全部通过！")
 
 
 def test_runtime_config_file():
@@ -1481,6 +1511,20 @@ def test_mcp_bridge_api():
                     required=("message",),
                     handler=echo,
                     description="Echo one MCP message.",
+                    output_schema={
+                        "type": "object",
+                        "required": ["echo", "path"],
+                        "properties": {
+                            "echo": {"type": "string"},
+                            "path": {"type": "array"},
+                        },
+                    },
+                    metadata={
+                        "read_only": True,
+                        "destructive": False,
+                        "idempotent": True,
+                        "open_world": False,
+                    },
                 ),
                 FunctionTool(name="Fail", handler=fail, description="Fail deterministically."),
             ],
@@ -1495,9 +1539,14 @@ def test_mcp_bridge_api():
         print("  OK scenario 1: initialize and ping return MCP-style results")
 
         listed = bridge.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
-        tool_names = {tool["name"] for tool in listed["result"]["tools"]}
+        listed_tools = {tool["name"]: tool for tool in listed["result"]["tools"]}
+        tool_names = set(listed_tools)
         assert {"Echo", "Fail"} <= tool_names
         assert "inputSchema" in listed["result"]["tools"][0]
+        assert listed_tools["Echo"]["outputSchema"]["required"] == ["echo", "path"]
+        assert listed_tools["Echo"]["annotations"]["readOnlyHint"] is True
+        assert listed_tools["Echo"]["annotations"]["destructiveHint"] is False
+        assert listed_tools["Echo"]["annotations"]["openWorldHint"] is False
         helper_manifest = mcp_tool_manifest(runtime)
         assert helper_manifest["tools"]
         print("  OK scenario 2: tools/list exposes Runtime tools")
@@ -1893,7 +1942,7 @@ if __name__ == "__main__":
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 7, 6, 2, 2, 2, 3, 9, 6, 5, 8, 5]
+    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 8, 6, 2, 2, 2, 3, 9, 6, 5, 8, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

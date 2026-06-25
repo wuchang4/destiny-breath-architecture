@@ -30,6 +30,20 @@ def main() -> None:
                     required=("text",),
                     handler=summarize,
                     description="Summarize one text payload.",
+                    output_schema={
+                        "type": "object",
+                        "required": ["summary", "nodes"],
+                        "properties": {
+                            "summary": {"type": "string"},
+                            "nodes": {"type": "array"},
+                        },
+                    },
+                    metadata={
+                        "read_only": True,
+                        "destructive": False,
+                        "idempotent": True,
+                        "open_world": False,
+                    },
                 )
             ],
         )

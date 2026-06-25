@@ -22,14 +22,32 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         runtime = Runtime.from_config(
             RuntimeConfig(workspace_root=tmpdir, state_dir=os.path.join(tmpdir, ".destiny")),
-            tools=[FunctionTool(name="Echo", required=("message",), handler=echo)],
+            tools=[
+                FunctionTool(
+                    name="Echo",
+                    required=("message",),
+                    handler=echo,
+                    output_schema={
+                        "type": "object",
+                        "required": ["echo"],
+                        "properties": {"echo": {"type": "string"}},
+                    },
+                    metadata={
+                        "read_only": True,
+                        "destructive": False,
+                        "idempotent": True,
+                        "open_world": False,
+                    },
+                )
+            ],
         )
         input_stream = io.StringIO(
             "\n".join([
                 json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+                json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
                 json.dumps({
                     "jsonrpc": "2.0",
-                    "id": 2,
+                    "id": 3,
                     "method": "tools/call",
                     "params": {"name": "Echo", "arguments": {"message": "hello stdio"}},
                 }),
