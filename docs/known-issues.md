@@ -10,7 +10,6 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 | 4 | Auxiliary scripts such as heartbeat/checkpoint helpers still use user-local `~/.clawdbot` paths. | Medium | Needs shared path provider |
 | 5 | Tests are centralized in `tests/test_all.py`, which is useful for smoke coverage but coarse for long-term maintenance. | Medium | Needs pytest module split |
 | 6 | Skill indexing depends on operator-local `~/.workbuddy/skills`; the repository does not ship a 130-skill library. | Medium | Needs packaged sample registry |
-| 7 | The graph has v3 parallel execution, but thread-level tracing still shares one trace context. | Medium | Needs thread-local trace context or span links |
 
 ## Recently Fixed
 
@@ -27,6 +26,7 @@ This file tracks known engineering gaps after the industrial-baseline upgrade.
 - `SqliteVectorMemoryProvider` and `RuntimeConfig.memory_backend = "sqlite-vector"` now provide a dependency-free SQLite vector memory backend.
 - Runtime now exposes `list_tools()`, `get_tool()`, and `tool_manifest()` for external agent/tool-calling integration.
 - Tool manifests now expose output schemas and safety metadata, and MCP `tools/list` maps that metadata into annotations.
+- `ExecutionTracer` and `ProvinceGraph.TraceContext` now isolate current spans per execution context and preserve parallel parent-child relationships.
 - Package/runtime/tracing/User-Agent version metadata is unified around `0.5.0`.
 - `examples/complete_agent_task.py` now demonstrates a complete repository-audit agent task with artifact writing, SQLite vector memory, and benchmark verification.
 - Runtime now includes dependency-free token budget controls for context compaction, model prompts/responses, memory search results, and tool result payloads.

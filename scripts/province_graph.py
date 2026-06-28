@@ -29,6 +29,8 @@ import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import ContextVar
+from threading import RLock
 from typing import Any, Callable, Dict, List, Optional, Set, TypedDict
 
 
@@ -178,18 +180,24 @@ class TraceContext:
     def __init__(self, trace_id: Optional[str] = None):
         self.trace_id = trace_id or uuid.uuid4().hex[:12]
         self.spans: List[Span] = []
-        self._current_span: Optional[Span] = None
+        self._current_span: ContextVar[Optional[Span]] = ContextVar(
+            f"province_graph_span_{id(self)}",
+            default=None,
+        )
+        self._lock = RLock()
 
-    def start_span(self, name: str) -> Span:
-        span = Span(name, parent=self._current_span)
-        self.spans.append(span)
-        self._current_span = span
+    def start_span(self, name: str, *, parent: Optional[Span] = None) -> Span:
+        span = Span(name, parent=parent or self._current_span.get())
+        with self._lock:
+            self.spans.append(span)
+        self._current_span.set(span)
         return span
 
     def end_span(self, status: str = "ok"):
-        if self._current_span:
-            self._current_span.finish(status)
-            self._current_span = self._current_span.parent
+        current = self._current_span.get()
+        if current:
+            current.finish(status)
+            self._current_span.set(current.parent)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -409,7 +417,7 @@ class ProvinceGraph:
             handler = self._node_handlers.get(node_name)
             if handler:
                 future = self._parallel_executor.submit(
-                    self._run_node_handler, node_name, handler, dict(self.state)
+                    self._run_node_handler, node_name, handler, dict(self.state), span
                 )
                 futures[future] = node_name
             else:
@@ -456,9 +464,15 @@ class ProvinceGraph:
         self._save_checkpoint()
         return self.state
 
-    def _run_node_handler(self, node_name: str, handler: Callable, state_copy: Dict) -> Optional[Dict]:
+    def _run_node_handler(
+        self,
+        node_name: str,
+        handler: Callable,
+        state_copy: Dict,
+        parent_span: Span,
+    ) -> Optional[Dict]:
         """在独立线程中运行节点 handler。"""
-        span = self._trace.start_span(f"execute@{node_name}")
+        span = self._trace.start_span(f"execute@{node_name}", parent=parent_span)
         try:
             result = handler(state_copy, span)
             span.add_event("handler_returned")

@@ -31,7 +31,7 @@ agent without forcing the agent itself to be rewritten.
 | --- | --- | --- |
 | Public runtime | Working | `destiny.Runtime`, typed `RunResult`, audit log, run store, and tool manifest export with metadata. |
 | Agent wrapper | Working | Wrap an existing agent with `runtime.enhance(agent)`. |
-| State graph | Working | `ProvinceGraph` v3 supports deterministic flow, parallel planning/verification, merge reducers, interrupt/resume, and checkpoints. |
+| State graph | Working | `ProvinceGraph` v3 supports deterministic flow, parallel planning/verification, thread-safe span context, merge reducers, interrupt/resume, and checkpoints. |
 | Tool safety | Working | Permission modes, path traversal checks, dangerous command checks, output limits, and confirmation gates. |
 | Standard tools | Working | File read/write, shell command, and HTTP GET adapters with workspace and private-host safeguards. |
 | Tool manifest | Working | Runtime can export registered tools, input schemas, output schemas, and safety metadata in native or generic function-calling format. |
@@ -44,7 +44,7 @@ agent without forcing the agent itself to be rewritten.
 | Evaluation | Working | `Benchmark` and `EvalCase` for deterministic enhanced-agent tests. |
 | Quality gate | Working | `QualityEvaluator` and `QualityRubric` score outputs and plug into `EvalCase.judge`. |
 | CLI | Working | `destiny-engine` plus script-compatible `python scripts/destiny_engine.py`. |
-| Tests | Working | Deterministic smoke/integration suite with 133 covered scenarios. |
+| Tests | Working | Deterministic smoke/integration suite with 134 covered scenarios. |
 | Real case | Working | `examples/complete_agent_task.py` runs a full repository-audit agent task. |
 
 ## Install
@@ -608,7 +608,7 @@ The repository now provides:
 - Audit logs and run result persistence.
 - Configurable state directory.
 - Token budget controls for context, model calls, memory retrieval, and tool results.
-- Deterministic test suite covering 133 scenarios.
+- Deterministic test suite covering 134 scenarios.
 - Complete real-case example for an agent-driven repository readiness audit.
 
 ## Current Limits

@@ -14,7 +14,7 @@ v2 新增测试：
   - model_router: 模型路由层测试 (6 场景)
   - config_merger: 配置层次化合并测试 (7 场景)
   - province_graph: 三省图 State Graph v2 测试 (14 场景)
-  - execution_tracer: 执行追踪器测试 (5 场景)
+  - execution_tracer: 执行追踪器测试 (6 场景)
   - tool_result_cache: 工具结果缓存测试 (6 场景)
   - integration: 全链路集成测试 (3 场景)
 
@@ -319,9 +319,15 @@ def test_province_graph():
 
     # 场景 11: 执行追踪
     g4 = ProvinceGraph()
+    g4.register_handler("门下省", lambda state, span: {"risk_level": "low"})
+    g4.register_handler("尚书省", lambda state, span: {"route": "parallel-test"})
     g4.step()
     g4.step({"confidence": 0.8})
     trace = g4.trace
+    parallel_span = next(span for span in trace.spans if span.name.startswith("parallel@"))
+    parallel_children = [span for span in trace.spans if span.parent is parallel_span]
+    assert len(parallel_children) == 2
+    assert all(span.name.startswith("execute@") for span in parallel_children)
     assert len(trace.spans) > 0, "应有执行 span"
     print("  ✅ 场景 11: 执行追踪记录 span")
 
@@ -345,6 +351,8 @@ def test_province_graph():
 
 def test_execution_tracer():
     """测试执行追踪器（v2 新增）。"""
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
     from execution_tracer import ExecutionTracer
 
     print("\n=== 测试执行追踪器 ===")
@@ -400,7 +408,32 @@ def test_execution_tracer():
     finally:
         os.unlink(tmp_path)
 
-    print("  🎉 执行追踪器全部 5 个测试通过！")
+    # 场景 6: 并发 worker 的 span 与结构化日志不能串上下文。
+    barrier = threading.Barrier(2)
+
+    def run_concurrent_span(name):
+        with tracer.span(name) as span:
+            barrier.wait(timeout=5)
+            tracer.log("INFO", name)
+            return span.span_id
+
+    names = ("worker-a", "worker-b")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(run_concurrent_span, name) for name in names]
+        span_ids = {name: future.result(timeout=10) for name, future in zip(names, futures)}
+
+    concurrent_spans = [span for span in tracer.spans if span.name.startswith("worker-")]
+    assert len(concurrent_spans) == 2
+    assert all(span.parent_id is None for span in concurrent_spans)
+    log_span_ids = {
+        entry["message"]: entry["span_id"]
+        for entry in tracer._structured_logs
+        if entry["message"].startswith("worker-")
+    }
+    assert log_span_ids == span_ids
+    print("  ✅ 场景 6: 并发 span 保持独立 parent 与日志上下文")
+
+    print("  🎉 执行追踪器全部 6 个测试通过！")
 
 
 def test_tool_result_cache():
@@ -1942,7 +1975,7 @@ if __name__ == "__main__":
     passed = 0
     failed = 0
     total_scenarios = 0
-    scenario_counts = [10, 7, 7, 13, 5, 6, 10, 10, 4, 5, 8, 6, 2, 2, 2, 3, 9, 6, 5, 8, 5]
+    scenario_counts = [10, 7, 7, 13, 6, 6, 10, 10, 4, 5, 8, 6, 2, 2, 2, 3, 9, 6, 5, 8, 5]
 
     for i, (name, test_fn) in enumerate(tests):
         try:

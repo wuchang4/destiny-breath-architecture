@@ -40,7 +40,9 @@ import time
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -256,7 +258,11 @@ class ExecutionTracer:
         self.service_name = service_name
         self.spans: List[Span] = []
         self.metrics: Dict[str, Metric] = {}
-        self._current_span_id: Optional[str] = None
+        self._current_span_id: ContextVar[Optional[str]] = ContextVar(
+            f"execution_tracer_span_{id(self)}",
+            default=None,
+        )
+        self._lock = RLock()
         self._current_trace_id: str = uuid.uuid4().hex[:32]
         self.start_time = time.time()
         self._structured_logs: List[Dict] = []
@@ -264,10 +270,14 @@ class ExecutionTracer:
     @contextmanager
     def span(self, name: str):
         """上下文管理器，自动管理 span 的开始和结束。与 v1 完全兼容。"""
-        s = Span(name, parent_id=self._current_span_id, trace_id=self._current_trace_id)
-        self.spans.append(s)
-        prev = self._current_span_id
-        self._current_span_id = s.span_id
+        s = Span(
+            name,
+            parent_id=self._current_span_id.get(),
+            trace_id=self._current_trace_id,
+        )
+        with self._lock:
+            self.spans.append(s)
+        token = self._current_span_id.set(s.span_id)
         try:
             yield s
             s.finish("ok")
@@ -277,7 +287,7 @@ class ExecutionTracer:
             s.finish("error")
             raise
         finally:
-            self._current_span_id = prev
+            self._current_span_id.reset(token)
 
     # ── 指标记录 ──────────────────────────────────────────
 
@@ -312,10 +322,11 @@ class ExecutionTracer:
             "level": level,
             "message": message,
             "trace_id": self._current_trace_id,
-            "span_id": self._current_span_id,
+            "span_id": self._current_span_id.get(),
             "data": data or {},
         }
-        self._structured_logs.append(entry)
+        with self._lock:
+            self._structured_logs.append(entry)
 
     # ── 导出：OTEL JSON ──────────────────────────────────
 
